@@ -21,17 +21,8 @@
 </head>
 <body>
 <h1 id="statistical-rethinking-2-with-stan-and-r">Statistical Rethinking 2 with <code>Stan</code> and <code>R</code></h1>
-<p>Vincent is trying to replicate (nearly) all the models in Richard McElreath’s <a href="https://xcelab.net/rm/statistical-rethinking/"><em>Statistical Rethinking</em></a> (2nd ed.) book using <code>R</code>, <code>Stan</code>, <code>cmdstanr</code>, <code>tidybayes</code>, and <code>ggplot2</code>.</p>
-<p>This is work in progress. Files can be downloaded from Github: <a href="https://github.com/vincentarelbundock/rethinking2">https://github.com/vincentarelbundock/rethinking2</a></p>
-<p>Each <code>Rmarkdown</code> notebook starts with:</p>
-<p><code>source('helper.R')</code></p>
-<p>This script loads:</p>
-<ol type="1">
-<li>The <code>tidyverse</code>, <code>cmdstanr</code>, <code>tidybayes</code>, and <code>patchwork</code> libraries;</li>
-<li>A method called <code>tidy_draws.CmdStanMCMC</code> which allows <code>tidybayes</code> to process objects produced by <code>cmdstanr</code>;</li>
-<li>A convenience function called <code>fit_model</code> which allows users to fit Stan models by calling <code>fit_model(stan_program, stan_data)</code>, where <code>stan_program</code> is a character object, and <code>stan_data</code> is a list.</li>
-</ol>
-<h1 id="table-of-contents">Table of contents</h1>
+<p>Vincent is trying to replicate (nearly) all the models in Richard McElreath’s <a href="https://xcelab.net/rm/statistical-rethinking/"><em>Statistical Rethinking</em></a> (2nd ed.) book using <code>R</code>, <code>Stan</code>, <code>cmdstanr</code>, <code>tidybayes</code>, and <code>ggplot2</code>. <em>This is work in progress.</em></p>
+<p>Rendered <code>Rmarkdown</code> notebooks can be viewed here:</p>
 <ul>
 <li><a href="https://vincentarelbundock.github.io/rethinking2/04.html">Chapter 04</a></li>
 <li><a href="https://vincentarelbundock.github.io/rethinking2/05.html">Chapter 05</a></li>
@@ -44,5 +35,14 @@
 <li><a href="https://vincentarelbundock.github.io/rethinking2/13.html">Chapter 13</a></li>
 <li><a href="https://vincentarelbundock.github.io/rethinking2/14.html">Chapter 14</a></li>
 </ul>
+<p>All files can be downloaded from Github: <a href="https://github.com/vincentarelbundock/rethinking2">https://github.com/vincentarelbundock/rethinking2</a></p>
+<p>Note that each <code>Rmarkdown</code> notebook starts with:</p>
+<p><code>source('helper.R')</code></p>
+<p>This script loads:</p>
+<ol type="1">
+<li>The <code>tidyverse</code>, <code>cmdstanr</code>, <code>tidybayes</code>, and <code>patchwork</code> libraries;</li>
+<li>A method called <code>tidy_draws.CmdStanMCMC</code> which allows <code>tidybayes</code> to process objects produced by <code>cmdstanr</code>;</li>
+<li>A convenience function called <code>fit_model</code> which allows users to fit Stan models by calling <code>fit_model(stan_program, stan_data)</code>, where <code>stan_program</code> is a character object, and <code>stan_data</code> is a list.</li>
+</ol>
 </body>
 </html>
