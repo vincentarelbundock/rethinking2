@@ -1,6 +1,6 @@
 # Statistical Rethinking 2 with `Stan` and `R`
 
-Vincent is trying to replicate (nearly) all the models in Richard McElreath's "Statistical Rethinking" (2nd ed.) book using `R`, `Stan`, `cmdstanr`, `tidybayes`, and `ggplot2`.
+Vincent is trying to replicate (nearly) all the models in Richard McElreath's [*Statistical Rethinking*](https://xcelab.net/rm/statistical-rethinking/) (2nd ed.) book using `R`, `Stan`, `cmdstanr`, `tidybayes`, and `ggplot2`.
 
 Each `Rmarkdown` notebook starts with:
 
@@ -15,5 +15,12 @@ This script loads:
 # Table of contents
 
 * [Chapter 04](https://vincentarelbundock.github.io/rethinking2/04.html)
-
-
+* [Chapter 05](https://vincentarelbundock.github.io/rethinking2/05.html)
+* [Chapter 07](https://vincentarelbundock.github.io/rethinking2/07.html)
+* [Chapter 08](https://vincentarelbundock.github.io/rethinking2/08.html)
+* [Chapter 09](https://vincentarelbundock.github.io/rethinking2/09.html)
+* [Chapter 10](https://vincentarelbundock.github.io/rethinking2/10.html)
+* [Chapter 11](https://vincentarelbundock.github.io/rethinking2/11.html)
+* [Chapter 12](https://vincentarelbundock.github.io/rethinking2/12.html)
+* [Chapter 13](https://vincentarelbundock.github.io/rethinking2/13.html)
+* [Chapter 14](https://vincentarelbundock.github.io/rethinking2/14.html)
