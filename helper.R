@@ -4,19 +4,17 @@ library(tidybayes) # extract and format draws
 library(patchwork) # combining plots
 library(coda)      # needed for tidy_draws.CmdStanMCMC
 
-# number of cores on Vincent's computer
-cores <- 4
-
 #' a convenience function to fit models with `cmdstanr` from a model passed as a
 #' R string object
 #' 
 #' @param stan_program A Stan program as a character object
 #' @param stan_data A list of data objects to be passed to Stan
-fit_model <- function(stan_program, stan_data) {
+#' @param parallel_chains Integer
+fit_model <- function(stan_program, stan_data, parallel_chains = 4) {
     # write 
     f <- write_stan_tempfile(stan_program)
     mod <- cmdstan_model(f)
-    fit <- mod$sample(stan_data, parallel_chains = cores)
+    fit <- mod$sample(stan_data, parallel_chains = parallel_chains)
     unlink(f)
     return(fit)
 }
