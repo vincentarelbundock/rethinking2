@@ -2,6 +2,8 @@
 
 Vincent is trying to replicate (nearly) all the models in Richard McElreath's [*Statistical Rethinking*](https://xcelab.net/rm/statistical-rethinking/) (2nd ed.) book using `R`, `Stan`, `cmdstanr`, `tidybayes`, and `ggplot2`.
 
+This is work in progress. Files can be downloaded from Github: https://github.com/vincentarelbundock/rethinking2
+
 Each `Rmarkdown` notebook starts with:
 
 `source('helper.R')`
