@@ -5,11 +5,22 @@ author: Vincent Arel-Bundock
 output: html_document
 ---
 
-```{r, results=FALSE, message=FALSE}
-source('helper.R')
+```{r, include=FALSE}
+# set default graphics theme if Vincent's personal package is installed
+if (requireNamespace('vincent', quietly = TRUE)) {
+        vincent::theming()
+}
 ```
 
-# Section 4.2: A language for describing models
+```{r, results=FALSE, message=FALSE}
+library(tidyverse)
+library(tidybayes)
+library(rstan)
+library(patchwork)
+options(mc.cores = 4)
+```
+
+# Section 4.3: Gaussian model of height
 
 ```{r, results=FALSE, message=FALSE}
 stan_program <- '
@@ -30,7 +41,7 @@ model {
 stan_data <- read.csv('data/Howell1.csv', sep = ';') %>%
  			 filter(age >= 18) %>%
              compose_data
-m4.1 <- fit_model(stan_program, stan_data)
+m4.1 <- stan(model_code = stan_program, data = stan_data)
 ```
 
 ```{r}
@@ -53,12 +64,14 @@ model {
   mu ~ normal(178, .1);
 }
 '
-m4.2 <- fit_model(stan_program, stan_data)
+m4.2 <- stan(model_code = stan_program, data = stan_data)
 ```
 
 ```{r}
 m4.2
 ```
+
+# Section 4.4: Linear prediction
 
 ```{r, results=FALSE, message=FALSE}
 stan_program <- '
@@ -85,14 +98,14 @@ model {
 
 stan_data$xbar <- mean(stan_data$weight)
 
-m4.3 <- fit_model(stan_program, stan_data)
+m4.3 <- stan(model_code = stan_program, data = stan_data)
 ```
 
 ```{r}
 m4.3
 ```
 
-# Section 4.3: Curves from lines
+# Section 4.5: Curves from lines
 
 ```{r, results = FALSE, message = FALSE}
 stan_program <- '
@@ -133,22 +146,19 @@ dat <- read.csv('data/Howell1.csv', sep = ';') %>%
        mutate(weight = as.vector(scale(weight)))
 datpred <- data.frame(weight = seq(min(dat$weight), max(dat$weight), length.out = 100))
 stan_data <- compose_data(dat)
-stan_model <- cmdstan_model(write_stan_tempfile(stan_program))
 
 stan_data$X <- model.matrix(~weight, dat)
 stan_data$K <- ncol(stan_data$X)
-m4.4 <- stan_model$sample(stan_data, parallel_chains = 4)
+m4.4 <- stan(model_code = stan_program, data = stan_data)
 
 stan_data$X <- model.matrix(~weight + I(weight^2), dat)
 stan_data$K <- ncol(stan_data$X)
-m4.5 <- stan_model$sample(stan_data, parallel_chains = 4)
+m4.5 <- stan(model_code = stan_program, data = stan_data)
 
 stan_data$X <- model.matrix(~weight + I(weight^2) + I(weight^3), dat)
 stan_data$K <- ncol(stan_data$X)
-m4.6 <- stan_model$sample(stan_data, parallel_chains = 4)
+m4.6 <- stan(model_code = stan_program, data = stan_data)
 ```
-
-
 
 ```{r, out.width="100%", fig.asp=.4}
 plot_predictions <- function(mod) {
@@ -172,4 +182,64 @@ p3 <- plot_predictions(m4.6) + ggtitle('Cubic')
 
 # combine plots with the `patchwork` package
 p1 + p2 + p3
+```
+
+#### Cherry blossom splines
+
+```{r}
+library(splines)
+
+dat <- read.csv('data/cherry_blossoms.csv', sep = ';') %>%
+       filter(!is.na(doy))
+num_knots <- 15
+knot_list <- quantile(dat$year, probs = seq(0, 1, length.out = num_knots))
+B <- bs(dat$year,
+        knot = knot_list[-c(1, num_knots)],
+        degree = 3,
+        intercept = TRUE)
+class(B) <- 'matrix'
+stan_data <- dat %>% compose_data(B = B, 
+                                  k = ncol(B),
+                                  w = rep(0, ncol(B)))
+
+stan_program <- '
+data {
+    int n;
+    int k;
+    int doy[n];
+    matrix[n, k] B;
+}
+parameters {
+    real a;
+    vector[k] w;
+    real<lower=0> sigma;
+}
+transformed parameters {
+    vector[n] mu;
+    mu = a + B * w;
+}
+model {
+    for (i in 1:n) {
+        doy[i] ~ normal(mu[i], sigma);
+    }
+    a ~ normal(100, 10);
+    w ~ normal(0, 10);
+    sigma ~ exponential(1);
+}
+'
+
+m4.7 <- stan(model_code = stan_program, data = stan_data)
+```
+
+```{r, out.width='100%', fig.asp = .3}
+datplot <- m4.7 %>% 
+           gather_draws(mu[i]) %>%
+           mean_qi 
+datplot$`Day in year` <- dat$doy
+datplot$Year <- dat$year
+
+ggplot(datplot, aes(Year, `Day in year`)) + 
+    geom_point(alpha = .4, color = 'blue') +
+    geom_ribbon(aes(Year, .value, ymin = .lower, ymax = .upper), alpha = .2) +
+    geom_line(aes(Year, .value))
 ```
