@@ -1,0 +1,607 @@
+---
+title: "Statistical Rethinking 2 Chapter 11"
+author: Vincent Arel-Bundock
+output: html_document
+---
+
+```{r, message=FALSE}
+
+library(tidyverse)
+library(rstan)
+library(tidybayes)
+library(rethinking)
+cols <- c("#D1B79EFF", "#7EBAC2FF", "#9E8356FF", "#0E84B4FF", "#B50A2AFF", "#333544FF", "#1C1A1FFF")
+options(mc.cores = parallel::detectCores(),
+        modelsummary_default = 'kableExtra',
+        ggplot2.discrete.fill = cols,
+        ggplot2.discrete.color = cols)
+theme_custom <- theme_minimal()
+theme_set(theme_classic())
+knitr::opts_chunk$set(message=FALSE, warning=FALSE)
+
+```
+
+# Section 11.1
+
+```{r, message=FALSE}
+
+# load and standardize data
+chimpanzees <- read.csv('data/chimpanzees.csv', sep = ';') %>%
+               mutate(treatment = factor(1 + prosoc_left + 2 * condition),
+                      actor = factor(actor))
+
+dat <- compose_data(chimpanzees)
+dat$n_predictions <- dat$n_actor * dat$n_treatment
+
+model <- '
+data {
+  int<lower=1> n;                       
+  int<lower=0, upper=1> pulled_left[n];
+}
+parameters {
+  real a;
+}
+transformed parameters{
+  real<lower=0, upper=1> p;
+  p = inv_logit(a);
+}
+model {
+  a ~ normal(1, 10);
+  pulled_left ~ binomial(1, p);
+}
+'
+
+mod <- stan(model_code = model, data = dat, control = list(adapt_delta = 0.99), iter = 10000)
+
+summary(mod, 'p')$summary
+
+```
+
+## R code 11.11
+
+```{r, message=FALSE, fig.asp = .3}
+
+model <- '
+data {
+  int<lower=1> n;                       
+  int<lower=1> n_treatment;                       
+  int<lower=1> n_actor;
+  int<lower=1> n_predictions;
+  int<lower=1> actor[n];
+  int<lower=0, upper=1> pulled_left[n];
+  int<lower=0, upper=4> treatment[n];
+}
+parameters {
+  real a[n_actor];
+  real b[n_treatment];
+}
+transformed parameters{
+  real<lower=0, upper=1> p[n];
+  for (i in 1:n) {
+      p[i] = inv_logit(a[actor[i]] + b[treatment[i]]);
+  }
+}
+model {
+  a ~ normal(1, 1.5);
+  b ~ normal(0, 0.5);
+  pulled_left ~ bernoulli(p);
+}
+generated quantities {
+  real db13;
+  real db24;
+  int k;
+  real<lower=0, upper=1> predictions[n_predictions];
+  db13 = b[1] - b[3];
+  db24 = b[2] - b[4];
+  k = 0;
+  for (i in 1:n_actor) {
+    for (j in 1:n_treatment) {
+      k += 1;
+      predictions[k] = inv_logit(a[i] + b[j]);
+    }
+  }
+}
+'
+
+mod <- stan(model_code = model, data = dat, control = list(adapt_delta = 0.99), iter = 1000)
+
+tmp <- mod %>% 
+       spread_draws(a[actor]) %>%
+       median_qi() %>%
+       mutate(actor = factor(actor))
+
+ggplot(tmp, aes(a, actor, xmin = .lower, xmax = .upper)) +
+  geom_pointrange()
+
+```
+
+```{r, fig.asp=.2}
+tmp <- mod %>% 
+       spread_draws(b[treatment]) %>%
+       median_qi() %>%
+       mutate(treatment = c('R/N', 'L/N', 'R/P', 'L/P')[treatment])
+
+ggplot(tmp, aes(b, treatment, xmin = .lower, xmax = .upper)) +
+  geom_vline(linetype = 'dashed', xintercept = 0) +
+  geom_pointrange()
+
+```
+
+```{r, fig.asp = .2}
+tmp <- mod %>% 
+       gather_draws(db13, db24) %>%
+       median_qi()
+
+ggplot(tmp, aes(.value, .variable, xmin = .lower, xmax = .upper)) +
+  geom_vline(linetype = 'dashed', xintercept = 0) +
+  geom_pointrange() + 
+  labs(x = 'Value', y = '')
+```
+
+## Figure 11.4
+
+```{r, fig.asp=.5, out.width='100%'}
+tmp <- mod %>% 
+       spread_draws(predictions[k]) %>%
+       median_qi() %>%
+       mutate(actor = NA, treatment = NA)
+k <- 0
+for (i in 1:dat$n_actor) {
+    for (j in 1:dat$n_treatment) {
+        k <- k + 1
+        tmp$actor[k] <- i
+        tmp$treatment[k] <- j
+    }
+}
+tmp <- tmp %>% 
+       mutate(treatment = c('R/N', 'L/N', 'R/P', 'L/P')[treatment],
+              treatment = factor(treatment, levels = c('R/N', 'L/N', 'R/P', 'L/P')))
+
+ggplot(tmp, aes(treatment, predictions, ymin = .lower, ymax = .upper, label = treatment)) +
+  geom_text() +
+  geom_hline(linetype = 'dashed', yintercept = 0) +
+  geom_linerange(alpha = .2) + 
+  facet_grid(~ actor) +
+  labs(x = 'Value', y = '')
+```
+
+# Section 11.1.3
+
+```{r}
+
+chimpanzees <- read.csv('data/chimpanzees.csv', sep = ';') %>%
+               mutate(treatment = factor(1 + prosoc_left + 2 * condition),
+                      actor = factor(actor),
+                      side = prosoc_left + 1,
+                      cond = condition + 1) %>%
+               group_by(treatment, actor, side, cond) %>%
+               summarize(left_pulls = sum(pulled_left))
+dat <- compose_data(chimpanzees)
+
+model <- '
+data {
+  int n;
+  int n_actor;
+  int n_treatment;
+  int treatment[n];
+  int actor[n];
+  int left_pulls[n];
+}
+parameters {
+  real a[n_actor];
+  real b[n_treatment];
+}
+model {
+  vector[n] p;
+  a ~ normal(0, 1.5);
+  b ~ normal(0, 0.5);
+  for (i in 1:n) {
+      p[i] = inv_logit(a[actor[i]] + b[treatment[i]]);
+  }
+  left_pulls ~ binomial(18, p);
+}
+'
+mod <- stan(model_code = model, data = dat)
+
+summary(mod, c('a', 'b'))$summary
+
+```
+
+# Section 11.1.4
+
+```{r, fig.asp = .7}
+
+UCBadmit <- read.csv('data/UCBadmit.csv', sep = ';') %>%
+            rename(rejection = reject,
+                   applicant_gender = applicant.gender) %>%
+            mutate(ratio = admit / applications)
+dat <- compose_data(UCBadmit)
+
+modA <- '
+data {
+  int n;
+  int n_dept;
+  int admit[n];
+  int applications[n];
+  int applicant_gender[n];
+}
+parameters {
+  real a[2];
+}
+transformed parameters {
+  vector[n] p;
+  for (i in 1:n) {
+    p[i] = inv_logit(a[applicant_gender[i]]);
+  }
+}
+model {
+  a ~ normal(0, 1.5);
+  for (i in 1:n) {
+    admit[i] ~ binomial(applications[i], p[i]);
+  }
+}
+'
+
+modB <- '
+data {
+  int n;
+  int n_dept;
+  int admit[n];
+  int applications[n];
+  int applicant_gender[n];
+  int dept[n];
+}
+parameters {
+  real a[2];
+  real b[n_dept];
+}
+transformed parameters {
+  vector[n] p;
+  for (i in 1:n) {
+    p[i] = inv_logit(a[applicant_gender[i]] + b[dept[i]]);
+  }
+}
+model {
+  a ~ normal(0, 1.5);
+  b ~ normal(0, 1.5);
+  for (i in 1:n) {
+    admit[i] ~ binomial(applications[i], p[i]);
+  }
+}
+'
+
+modA <- stan(model_code = modA, data = dat)
+modB <- stan(model_code = modB, data = dat)
+
+tabA <- UCBadmit %>%
+        mutate(`Model A` = summary(modA, 'p')$summary[, 1])
+tabB <- UCBadmit %>%
+        mutate(`Model B` = summary(modB, 'p')$summary[, 1])
+
+tab <- left_join(tabA, tabB) %>%
+       rename(Observed = ratio) %>% 
+       pivot_longer(cols = c(6:8))
+
+ggplot(tab, aes(applicant_gender, value, color = name, shape = applicant_gender), alpha = .8) +
+    geom_point(size = 4) +
+    facet_grid(. ~ dept) +
+    labs(x = '',
+         y = 'Probability of admission',
+         color = '',
+         shape = '')
+
+```
+
+# Section 11.2
+
+```{r, fig.asp = .5}
+
+kline <- read.csv('data/kline.csv', sep = ';') %>%
+         mutate(P = as.vector(scale(log(population))))
+dat <- compose_data(kline)
+
+model <- '
+data {
+  int n;
+  int total_tools[n];
+}
+parameters {
+  real a;
+}
+model {
+  vector[n] lambda;
+  a ~ normal(3, 0.5);
+  for (i in 1:n) {
+    lambda[i] = exp(a);
+  }
+  total_tools ~ poisson(lambda);
+}
+'
+m11.9 <- stan(model_code = model, data = dat)
+
+model <- '
+data {
+  int n;
+  int n_contact;
+  int contact[n];
+  real P[n];
+  real Pnew[100];
+  int total_tools[n];
+}
+parameters {
+  real a[n_contact];
+  real b[n_contact];
+}
+model {
+  vector[n] lambda;
+  for (i in 1:n) {
+    lambda[i] = exp(a[contact[i]] + b[contact[i]] * P[i]);
+  }
+  a ~ normal(3, 0.5);
+  b ~ normal(0, 0.2);
+  total_tools ~ poisson(lambda);
+}
+generated quantities {
+  real yhat[100, 2];
+  for (i in 1:100) {
+    for (j in 1:2) {
+      yhat[i, j] = exp(a[j] + b[j] * Pnew[i]);
+    }
+  }
+}
+'
+dat$Pnew <- seq(min(dat$P), max(dat$P), length.out = 100)
+m11.10 <- stan(model_code = model, data = dat, iter = 10000)
+
+datplot <- m11.10 %>%
+           gather_draws(yhat[idx, contact]) %>%
+           median_qi() %>%
+           left_join(tibble(idx = 1:100, 'Population' = dat$Pnew), by = 'idx') %>%
+           mutate(contact = ifelse(contact == 1, 'Low', 'High')) %>%
+           rename(Tools = .value)
+
+ggplot(datplot, aes(Population, Tools, linetype = contact, ymax = .upper, ymin = .lower, fill = contact)) +
+    geom_ribbon(alpha = .2) +
+    geom_line() +
+    xlab('log population (std)')
+
+```
+
+```{r}
+
+model <- '
+data {
+  int n;
+  int n_contact;
+  int contact[n];
+  real population[n];
+  int total_tools[n];
+}
+parameters {
+  real a[n_contact];
+  real<lower=0> b[n_contact];
+  real<lower=0> g;
+}
+model {
+  vector[n] lambda;
+  for (i in 1:n) {
+    lambda[i] = exp(a[contact[i]]) * population[i]^b[contact[i]] / g;
+  }
+  a ~ normal(1, 1);
+  b ~ exponential(1);
+  g ~ exponential(1);
+  total_tools ~ poisson(lambda);
+}
+'
+
+m11.11 <- stan(model_code = model, data = dat, iter = 10000)
+
+m11.11
+
+```
+
+# Section 11.2.2
+
+```{r, fig.asp = .4}
+
+old <- data.frame('monastery' = 0,
+                  'exposure' = 1,
+                  'y' = rpois(30, 1.5))
+new <- data.frame('monastery' = 1,
+                  'exposure' = 7,
+                  'y' = rpois(4, 0.5 * 7))
+monasteries <- rbind(old, new) %>%
+               mutate(log_days = log(exposure))
+dat <- compose_data(monasteries)
+
+model <- '
+data {
+  int<lower=1> n;
+  real<lower=0> log_days[n];
+  int<lower=0, upper=1> monastery[n];
+  int y[n];
+}
+parameters {
+  real a;
+  real b;
+}
+model {
+  real lambda[n];
+  for (i in 1:n) {
+    lambda[i] = exp(log_days[i] + a + b * monastery[i]);
+  }
+  y ~ poisson(lambda);
+  a ~ normal(0, 1);
+  b ~ normal(0, 1);
+}
+generated quantities {
+  real Old;
+  real New;
+  Old = exp(a);
+  New = exp(a + b);
+}
+'
+
+m11.12 <- stan(model_code = model, data = dat)
+
+m11.12 %>% gather_draws(Old, New) %>%
+           ggplot(aes(.value, .variable)) +
+           stat_halfeye() +
+           labs(x = 'Posterior distribution of monastic productivity', y = '')
+
+```
+
+# Section 11.3
+
+```{r}
+
+# simulate career choices among 500 individuals
+N <- 500             # number of individuals
+income <- c(1,2,5)   # expected income of each career
+score <- 0.5*income  # scores for each career, based on income
+
+# next line converts scores to probabilities
+p <- softmax(score[1],score[2],score[3])
+
+# now simulate choice
+# outcome career holds event type values, not counts
+career <- rep(NA,N)  # empty vector of choices for each individual
+
+# sample chosen career for each individual
+set.seed(34302)
+for ( i in 1:N ) career[i] <- sample( 1:3 , size=1 , prob=p )
+dat_list <- list( N=N , K=3 , career=career , career_income=income )
+
+model <- "
+data{
+    int N; // number of individuals
+    int K; // number of possible careers
+    int career[N]; // outcome
+    vector[K] career_income;
+}
+parameters{
+    vector[K-1] a; // intercepts
+    real<lower=0> b; // association of income with choice
+}
+model{
+    vector[K] p;
+    vector[K] s;
+    a ~ normal( 0 , 1 );
+    b ~ normal( 0 , 0.5 );
+    s[1] = a[1] + b*career_income[1];
+    s[2] = a[2] + b*career_income[2];
+    s[3] = 0; // pivot
+    p = softmax( s );
+    career ~ categorical( p );
+}
+"
+
+m11.13 <- stan( model_code=model , data=dat_list , chains=4 )
+
+```
+
+```{r}
+
+## R code 11.59
+N <- 500
+# simulate family incomes for each individual
+family_income <- runif(N)
+# assign a unique coefficient for each type of event
+b <- c(-2,0,2)
+career <- rep(NA,N)  # empty vector of choices for each individual
+for ( i in 1:N ) {
+    score <- 0.5*(1:3) + b*family_income[i]
+    p <- softmax(score[1],score[2],score[3])
+    career[i] <- sample( 1:3 , size=1 , prob=p )
+}
+dat <- list( N=N , K=3 , career=career , family_income=family_income )
+
+model <- "
+data{
+    int N; // number of observations
+    int K; // number of outcome values
+    int career[N]; // outcome
+    real family_income[N];
+}
+parameters{
+    vector[K-1] a; // intercepts
+    vector[K-1] b; // coefficients on family income
+}
+model{
+    vector[K] p;
+    vector[K] s;
+    a ~ normal(0,1.5);
+    b ~ normal(0,1);
+    for ( i in 1:N ) {
+        for ( j in 1:(K-1) ) s[j] = a[j] + b[j]*family_income[i];
+        s[K] = 0; // the pivot
+        p = softmax( s );
+        career[i] ~ categorical( p );
+    }
+}
+"
+
+m11.14 <- stan( model_code=model , data=dat)
+m11.14
+
+```
+
+# Section 1.3.3
+
+```{r}
+
+UCBadmit <- read.csv('data/UCBadmit.csv', sep = ';') %>%
+            rename(rejection = reject) %>%
+            janitor::clean_names() %>%
+            mutate(ratio = admit / applications)
+dat <- compose_data(UCBadmit)
+
+model <- '
+data {
+  int n;
+  int admit[n];
+  int applications[n];
+}
+parameters {
+  real a;
+}
+transformed parameters {
+  real p;
+  p = inv_logit(a);
+}
+model {
+  for (i in 1:n) {
+    admit[i] ~ binomial(applications[i], p);
+  }
+}
+'
+m_binomial <- stan(model_code = model, data = dat)
+
+model <- '
+data {
+  int n;
+  int admit[n];
+  int rejection[n];
+  int applications[n];
+}
+parameters {
+  real lambda[2];
+  real a[2];
+}
+model {
+  for (i in 1:n) {
+    admit[i] ~ poisson(exp(a[1]));
+    rejection[i] ~ poisson(exp(a[2]));
+  }
+}
+generated quantities {
+  real p;
+  p = exp(a[1]) / (exp(a[1]) + exp(a[2]));
+}
+'
+m_poisson <- stan(model_code = model, data = dat)
+
+m_binomial
+m_poisson
+
+```

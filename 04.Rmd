@@ -1,0 +1,175 @@
+---
+title: "Statistical Rethinking 2: Chapter 4"
+subtitle:
+author: Vincent Arel-Bundock
+output: html_document
+---
+
+```{r, results=FALSE, message=FALSE}
+source('helper.R')
+```
+
+# Section 4.2: A language for describing models
+
+```{r, results=FALSE, message=FALSE}
+stan_program <- '
+data {
+  int<lower=1> n;
+  vector[n] height;
+}
+parameters {
+  real mu;
+  real<lower=0,upper=50> sigma;
+}
+model {
+  height ~ normal(mu, sigma);
+  sigma ~ uniform(0, 50);
+  mu ~ normal(178, 20);
+}
+'
+stan_data <- read.csv('data/Howell1.csv', sep = ';') %>%
+ 			 filter(age >= 18) %>%
+             compose_data
+m4.1 <- fit_model(stan_program, stan_data)
+```
+
+```{r}
+m4.1
+```
+
+```{r, results=FALSE, message=FALSE}
+stan_program <- '
+data {
+  int<lower=1> n;
+  vector[n] height;
+}
+parameters {
+  real mu;
+  real<lower=0,upper=50> sigma;
+}
+model {
+  height ~ normal(mu, sigma);
+  sigma ~ uniform(0, 50);
+  mu ~ normal(178, .1);
+}
+'
+m4.2 <- fit_model(stan_program, stan_data)
+```
+
+```{r}
+m4.2
+```
+
+```{r, results=FALSE, message=FALSE}
+stan_program <- '
+data {
+  int<lower=1> n;
+  real xbar;
+  vector[n] height;
+  vector[n] weight;
+}
+parameters {
+  real<lower=0,upper=50> sigma;
+  real<lower=0> b;
+  real a;
+}
+model {
+  vector[n] mu;
+  mu = a + b * (weight - xbar);
+  height ~ normal(mu, sigma);
+  a ~ normal(178, 20);
+  b ~ lognormal(0, 1);
+  sigma ~ uniform(0, 50);
+}
+'
+
+stan_data$xbar <- mean(stan_data$weight)
+
+m4.3 <- fit_model(stan_program, stan_data)
+```
+
+```{r}
+m4.3
+```
+
+# Section 4.3: Curves from lines
+
+```{r, results = FALSE, message = FALSE}
+stan_program <- '
+data {
+  int<lower=1> n;   // number of observations
+  int<lower=1> K;   // number of coefficients (including intercept)
+  vector[n] height;      // outcome
+  matrix[n, K] X;   // regressors
+}
+parameters {
+  real<lower=0,upper=50> sigma;
+  vector[K] b;
+}
+transformed parameters {
+  vector[n] mu;
+  mu = X * b;
+}
+model {
+  height ~ normal(mu, sigma);
+  b[1] ~ normal(178, 20);
+  b[2] ~ lognormal(0, 1);
+  if (K > 2) {
+    for (i in 3:K) {
+      b[i] ~ normal(0, 10);
+      }
+  }
+  sigma ~ uniform(0, 50);
+}
+generated quantities {
+  vector[n] muhat;
+  for (i in 1:n) {
+    muhat[i] = normal_rng(mu[i], sigma);
+  }
+}
+'
+
+dat <- read.csv('data/Howell1.csv', sep = ';') %>%
+       mutate(weight = as.vector(scale(weight)))
+datpred <- data.frame(weight = seq(min(dat$weight), max(dat$weight), length.out = 100))
+stan_data <- compose_data(dat)
+stan_model <- cmdstan_model(write_stan_tempfile(stan_program))
+
+stan_data$X <- model.matrix(~weight, dat)
+stan_data$K <- ncol(stan_data$X)
+m4.4 <- stan_model$sample(stan_data, parallel_chains = 4)
+
+stan_data$X <- model.matrix(~weight + I(weight^2), dat)
+stan_data$K <- ncol(stan_data$X)
+m4.5 <- stan_model$sample(stan_data, parallel_chains = 4)
+
+stan_data$X <- model.matrix(~weight + I(weight^2) + I(weight^3), dat)
+stan_data$K <- ncol(stan_data$X)
+m4.6 <- stan_model$sample(stan_data, parallel_chains = 4)
+```
+
+
+
+```{r, out.width="100%", fig.asp=.4}
+plot_predictions <- function(mod) {
+    pred <- mod %>% 
+            spread_draws(mu[i], muhat[i]) %>%
+            mean_qi %>%
+            mutate(Weight = stan_data$weight,
+                   Height = stan_data$height) %>%
+            arrange(Weight)
+    ggplot(pred) +
+        geom_ribbon(aes(Weight, ymin = muhat.lower, ymax = muhat.upper), alpha = .2) +
+        geom_ribbon(aes(Weight, ymin = mu.lower, ymax = mu.upper), alpha = .2, fill = 'red') +
+        geom_line(aes(Weight, mu)) +
+        geom_point(aes(Weight, Height), shape = 1, color = 'dodgerblue4', alpha = .5) +
+        ylab('Height')
+}
+
+p1 <- plot_predictions(m4.4) + ggtitle('Linear')
+p2 <- plot_predictions(m4.5) + ggtitle('Quadratic')
+p3 <- plot_predictions(m4.6) + ggtitle('Cubic')
+
+# combine plots with the `patchwork` package
+p1 + p2 + p3
+```

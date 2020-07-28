@@ -1,0 +1,133 @@
+---
+title: "Statistical Rethinking 2 Chapter 12"
+author: Vincent Arel-Bundock
+output: html_document
+---
+
+```{r, message=FALSE}
+# load libraries and helper functions
+source('helper.R')
+```
+
+# Section 12.1.1
+
+Warning: The results of this model seem highly dependent on the random seed. This won't replicate the book results exactly.
+
+```{r, message=FALSE, results=FALSE}
+stan_program <- '
+data {
+    int n;
+    int gender[n];
+    int admit[n];
+    int applications[n];
+}
+parameters {
+    vector[2] a;
+    real<lower=0> phi;
+}
+transformed parameters {
+    vector[n] pbar;
+    real theta;
+    theta = phi + 2;
+    for (i in 1:n) {
+        pbar[i] = a[gender[i]];
+        pbar[i] = inv_logit(pbar[i]);
+    }
+}
+model {
+    phi ~ exponential(1);
+    a ~ normal(0, 1.5);
+    admit ~ beta_binomial(applications, pbar * theta, (1 - pbar) * theta);
+}
+generated quantities {
+    real da;
+    da = a[1] - a[2];
+}
+'
+
+stan_data <- read.csv('data/UCBadmit.csv', sep = ';') %>%
+             rename(gender = applicant.gender) %>%
+             prepare_data
+
+m12.1 <- cmdstan_model(write_stan_tempfile(stan_program))
+m12.1 <- m12.1$sample(stan_data)
+```
+
+```{r}
+m12.1$summary(c('a', 'theta'))
+```
+
+```{r}
+#df <- m12.1$draws(c('a[1]', 'theta')) %>% 
+#      as_draws_df %>% 
+#      sample_n(10)
+    
+#ggplot(data.frame(x = 0:1), aes(x)) +
+#    geom_function(fun = function(x) rethinking::dbeta2(x, -0.4397136, 3.0483273))
+```
+
+
+# Section 12.4: Ordered categorical predictors
+
+```{r}
+stan_program <- '
+data{
+    int n;
+    int response[n];
+    int contact[n];
+    int intention[n];
+    int action[n];
+    int edu_new[n];
+    vector[7] alpha;
+}
+parameters{
+    ordered[6] kappa;
+    real bE;
+    real bC;
+    real bI;
+    real bA;
+    simplex[7] delta;
+}
+model{
+    vector[n] phi;
+    vector[8] delta_j;
+    delta ~ dirichlet( alpha );
+    delta_j = append_row(0, delta);
+    bA ~ normal( 0 , 1 );
+    bI ~ normal( 0 , 1 );
+    bC ~ normal( 0 , 1 );
+    bE ~ normal( 0 , 1 );
+    kappa ~ normal( 0 , 1.5 );
+    for ( i in 1:n ) {
+        phi[i] = bE * sum(delta_j[1:edu_new[i]]) + 
+                 bA * action[i] + 
+                 bI * intention[i] + 
+                 bC * contact[i];
+    }
+    for ( i in 1:n ) response[i] ~ ordered_logistic( phi[i] , kappa );
+}
+'
+
+stan_data <- read.csv('data/Trolley.csv', sep = ';') %>%
+             # ordered education levels
+             mutate(edu_new = factor(edu, levels = c("Elementary School",
+                                                     "Middle School",
+                                                     "Some High School",
+                                                     "High School Graduate",
+                                                     "Some College",
+                                                     "Bachelor's Degree",
+                                                     "Master's Degree",
+                                                     "Graduate Degree"))) %>%
+            prepare_data
+stan_data$alpha <- rep(2, 7)
+
+m12.6 <- write_stan_tempfile(stan_program) # write to file
+m12.6 <- cmdstan_model(m12.6)              # compile
+m12.6 <- m12.6$sample(stan_data)           # fit
+```
+
+
+
+```{r}
+m12.6$summary(c('bE', 'bC', 'bI', 'bA', 'delta'))
+```

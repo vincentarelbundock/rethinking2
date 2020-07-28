@@ -1,0 +1,240 @@
+<!--
+    
+    Draw posterior mean beta distribution:
+    
+    ```{r}
+
+UCBadmit$case <- 1:nrow(UCBadmit)
+post <- m12.1 %>%
+    spread_draws(theta, a[gender]) %>%
+    filter(gender == 1) %>%
+    sample_n(1000)
+postmedian <- m12.1 %>%
+    spread_draws(theta, a[gender]) %>%
+    filter(gender == 1) %>%
+    median_qi()
+
+factory <- function(a, b) {
+    force(a)
+    force(b)
+    function(x) dbeta2(x, a, b)
+}
+
+f <- factory(mean(logistic(postmedian$a[1])), mean(postmedian$theta[1]))
+
+p <- ggplot(data.frame(x = seq(0, 1))) +
+    ylim(0, 2.5) + xlim(0.00001, 0.99999) +
+    geom_function(fun = f)
+for (i in 1:nrow(post)) {
+    x <- seq(0.00001, .99999, length.out = 100)
+    y <- dbeta2(x, logistic(post$a[i]), post$theta[i], log = FALSE)
+    tmp <- data.frame(x, y)
+    p <- p + geom_line(data = tmp, aes(x, y), alpha = .1)
+}
+p
+
+for (i in 1:100) {
+    curve(function(x) dbeta2(x, logistic(post$a[i]), post$theta[i], log = FALSE))
+}
+
+
+
+```
+
+Posterior validation check:
+    
+    ```{r, fig.asp = .4}
+
+tmp <- m12.1 %>%
+    spread_draws(pbar[i]) %>%
+    median_qi %>%
+    bind_cols(UCBadmit)  %>%
+    mutate(Observed = admit / applications,
+           Predicted = pbar,
+           Case = factor(i)) %>%
+    select(Case, Observed, Predicted) %>%
+    pivot_longer(-1)
+
+ggplot(tmp, aes(x = Case, y = value, color = name)) +
+    geom_point() +
+    theme(legend.title = element_blank()) +
+    ylab('Probability of admission')
+
+```
+
+# Section 12.1.2
+
+```{r}
+
+#dat <- read.csv('data/Kline.csv', sep = ';') %>%
+#       mutate(population_std = as.vector(scale(log(population)))) %>% 
+#       compose_data
+#
+#model <- '
+#data {
+#    int n;
+#    int n_contact;
+#    real population_std[n];
+#    int total_tools[n];
+#    int contact[n];
+#}
+#parameters {
+#    vector[n_contact] a;
+#    vector<lower=0>[n_contact] b;
+#    real<lower=0> g;
+#    real<lower=0> phi;
+#}
+#transformed parameters {
+#    vector<lower=0>[n] lambda;
+#    for (i in 1:n) {
+#        lambda[i] = exp(a[contact[i]]) * population_std[i]^b[contact[i]] / g;
+#    }
+#}
+#model {
+#    phi ~ exponential(1);
+#    g ~ exponential(1);
+#    b ~ exponential(1);
+#    a ~ normal(1, 1);
+#    total_tools ~ neg_binomial_2(lambda, phi);
+#}
+#'
+#
+#mod <- stan(model_code = model, data = dat, chain = 1)
+#mod
+
+#cat(get_stancode(m12.2@stanfit))
+
+```
+
+
+# Section 12.2: Zero-inflated outcomes
+
+### Warning: Does not replication
+
+```{r}
+
+prob_drink <- 0.2 # 20% of days
+rate_work <- 1    # average 1 manuscript per day
+
+# sample one year of production
+N <- 365
+
+# simulate days monks drink
+set.seed(365)
+drink <- rbinom(N, 1, prob_drink)
+
+# simulate manuscripts completed
+y <- (1 - drink) * rpois(N, rate_work)
+
+dat <- list(y = y, N = length(y))
+
+model <- '
+data {
+    int N;
+    int y[N];
+}
+parameters {
+    real ap;
+    real al;
+}
+transformed parameters {
+    real<lower=0, upper=1> p[N];
+    real<lower=0> lambda[N];
+    for (i in 1:N) {
+        lambda[i] = inv_logit(al);
+        p[i] = inv_logit(ap);
+    }
+}
+model {
+    ap ~ normal(-1.5, 1);
+    al ~ normal(1, 0.5);
+    for (i in 1:N) {
+        if (y[i] > 0) {
+            target += log1m(p[i]) + poisson_lpmf(y[i] | lambda[i]);
+        }
+        if (y[i] == 0) {
+            target += log_mix(p[i], 0, poisson_lpmf(0 | lambda[i]));
+        }
+    }
+}
+'
+mod <- stan(model_code = model, data = dat, chain = 4, iter = 10000)
+
+summary(mod, c('ap', 'al'))$summary
+
+
+```
+
+# Section 12.3: Ordered categorical outcomes
+
+```{r}
+
+Trolley <- read.csv('data/Trolley.csv', sep = ';')
+dat <- compose_data(Trolley)
+dat$K <- length(unique(dat$response))
+
+model <- '
+data {
+    int n;
+    int K;
+    int<lower=0> response[n];
+}
+parameters {
+    ordered[K - 1] cutpoints;
+}
+model {
+    for (i in 1:n) {
+        response[i] ~ ordered_logistic(0, cutpoints);
+    }
+}
+'
+m12.4 <- stan(model_code = model, data = dat)
+
+summary(m12.4)$summary
+
+```
+
+### Warning: This does not replicate
+
+```{r}
+
+dat <- compose_data(Trolley)
+dat$X <- model.matrix(~ intention + action + contact + 
+                          intention:contact + intention:action - 1, 
+                      data = Trolley)
+dat$K <- length(unique(dat$response))
+dat$P <- ncol(dat$X)
+
+model <- '
+data {
+    int n;
+    int K;
+    int P;
+    matrix[n, P] X;
+    int<lower=0> response[n];
+}
+parameters {
+    ordered[K - 1] cutpoints;
+    vector[P] beta;
+}
+model {
+    vector[n] phi;
+    phi = X * beta;
+    beta ~ normal(0, 0.5);
+    cutpoints ~ normal(0, 1.5);
+    for (i in 1:n) {
+        response[i] ~ ordered_logistic(phi[i], cutpoints);
+    }
+}
+'
+
+m12.5 <- stan(model_code = model, data = dat)
+
+summary(m12.5)$summary
+
+```
+
+# Section 12.4: Ordered categorical predictors
+
+
+-->

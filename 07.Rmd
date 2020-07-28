@@ -1,0 +1,113 @@
+---
+title: "Statistical Rethinking 2 Chapter 7"
+author: Vincent Arel-Bundock
+output: html_document
+---
+
+```{r, message=FALSE}
+
+library(tidyverse)
+library(rstan)
+library(tidybayes)
+library(patchwork)
+options(mc.cores = parallel::detectCores())
+theme_set(theme_classic())
+knitr::opts_chunk$set(message=FALSE, warning=FALSE)
+
+```
+
+# Section 7.1.1
+
+## Warning: I get very different results from the book. Is this `quap` vs `Stan` or a problem with my code? (Probably the latter.)
+
+```{r, message=FALSE}
+
+d <- tibble(sppnames = c("afarensis", "africanus", "habilis", "boisei", "rudolfensis", "ergaster", "sapiens"),
+            brainvolcc = c( 438 , 452 , 612, 521, 752, 871, 1350 ),
+            masskg = c( 37.0 , 35.5 , 34.5 , 41.5 , 55.5 , 61.0 , 53.5 )) %>%
+     mutate(brain_std = brainvolcc / max(brainvolcc),
+            mass_std1 = (masskg - mean(masskg)) / sd(masskg),
+            mass_std2 = mass_std1^2,
+            mass_std3 = mass_std1^3,
+            mass_std4 = mass_std1^4,
+            mass_std5 = mass_std1^5,
+            mass_std6 = mass_std1^6)
+
+prepare_data <- function(formula) {
+  mf <- model.frame(formula, d)
+  y <- as.vector(mf[[1]])
+  X <- model.matrix(formula, mf)
+  n <- nrow(X)
+  k <- ncol(X)
+  Xpred <- seq(min(y), max(y), length.out = 100)
+  Xpred <- data.frame(1, Xpred, Xpred^2, Xpred^3, Xpred^4, Xpred^5, Xpred^6)[, 1:k]
+  colnames(Xpred) <- colnames(X)
+  out <- list('y' = y, 'X' = X, 'Xpred' = Xpred, 'n' = n, 'k' = k)
+  return(out)
+}
+
+dat <- list(brain_std ~ mass_std1,
+            brain_std ~ mass_std1 + mass_std2,
+            brain_std ~ mass_std1 + mass_std2 + mass_std3,
+            brain_std ~ mass_std1 + mass_std2 + mass_std3 + mass_std4,
+            brain_std ~ mass_std1 + mass_std2 + mass_std3 + mass_std4 + mass_std5,
+            brain_std ~ mass_std1 + mass_std2 + mass_std3 + mass_std4 + mass_std5 + mass_std6) %>%
+       purrr::map(prepare_data)
+
+```
+
+## R code 7.3
+
+```{r}
+
+model <- '
+data {
+  int<lower=1> n;        // number of observations
+  int<lower=1> k;        // number of regressors
+  vector[n] y;           // outcome
+  matrix[n, k] X;        // regressors
+  matrix[100, k] Xpred;  // new data for prediction
+}
+parameters {
+  real sigma;
+  vector[k] b;
+}
+transformed parameters {
+  vector[n] mu;                    // location
+  mu = X * b;
+}
+model {
+  y ~ normal(mu, sigma);
+  sigma ~ lognormal(0, 1);
+  b[1] ~ normal(0.5, 1);
+  for (i in 2:k) b[i] ~ normal(0, 10);
+}
+generated quantities {
+  vector[100] yhat;
+  vector[100] muhat;
+  for (i in 1:100) {
+    muhat[i] = Xpred[i,] * b;
+    yhat[i] = normal_rng(muhat[i], sigma);
+  }
+}
+'
+
+plot_posterior_predictions <- function(model) {
+  datplot <- model %>% 
+             spread_draws(yhat[i], muhat[i]) %>% 
+             median_qi() %>%
+             bind_cols(dat[[6]]$Xpred)
+  p <- ggplot(data = datplot, aes(mass_std1, muhat, 
+                             ymin = yhat.lower, 
+                             ymax = yhat.upper)) +
+       geom_ribbon(alpha = .1) +
+       geom_line()
+  p
+}
+
+mod <- purrr::map(dat, ~ stan(model_code = model, data = ., control = list(adapt_delta = 0.99), iter = 10000))
+
+plt <- purrr::map(mod, plot_posterior_predictions)
+
+(plt[[1]] + plt[[2]] + plt[[3]]) / (plt[[4]] + plt[[5]] + plt[[6]])
+```

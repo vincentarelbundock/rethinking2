@@ -1,0 +1,195 @@
+---
+title: "Statistical Rethinking 2: Chapter 5"
+author: Vincent Arel-Bundock
+---
+
+```{r, message=FALSE}
+source('helper.R')
+```
+
+# Section 5.1
+
+```{r}
+standardize <- function(x) as.vector(scale(x))
+stan_data <- read.csv('../rethinking/data/WaffleDivorce.csv', sep = ';') %>%
+             mutate(across(c(Divorce, Marriage, MedianAgeMarriage), standardize)) %>%
+             compose_data
+```
+
+#### Plausible regression lines implied by the priors
+
+We will estimate a series of regression models with a constant $\alpha$ and regression coefficients $\beta_k$, and these priors:
+
+$$\alpha \sim N(0, .2)$$
+$$\beta_k \sim N(0, .5)$$
+
+To see if these priors make sense, we can plot a few of the regression lines implied by these priors. To do this, we draw random numbers from the distributions above, and we plot the corresponding regression lines:
+
+```{r}
+a = rnorm(50, 0, .2)
+b = rnorm(50, 0, .5)
+p <- ggplot()
+for (i in 1:50) {
+    p <- p + geom_abline(slope = b[i], intercept = a[i])
+}
+p + xlim(-3, 3) + ylim(-3, 3) +
+    labs(x = 'Median age marriage (std)',
+         y = 'Divorce rate (std)')
+```
+
+# Linear regression model in Stan
+
+```{r}
+model <- '
+data {
+  int<lower=1> N;   // number of observations
+  int<lower=1> K;   // number of regressors (including constant)
+  vector[N] y;      // outcome
+  matrix[N, K] X;   // regressors
+}
+parameters {
+  real<lower=0,upper=50> sigma;    // scale
+  vector[K] b;                     // coefficients (including constant)
+}
+transformed parameters {
+  vector[N] mu;                    // location
+  mu = X * b;
+}
+model {
+  y ~ normal(mu, sigma);    // probability model
+  sigma ~ exponential(1);   // prior for scale
+  b[1] ~ normal(0, 0.2);    // prior for intercept
+  for (i in 2:K) {          // priors for coefficients
+    b[i] ~ normal(0, 0.5);
+  }
+}
+generated quantities {
+  vector[N] yhat;           // predicted outcome
+  for (i in 1:N) yhat[i] = normal_rng(mu[i], sigma);
+}
+'
+
+mod1 <- fit_model(stan_program, stan_data)
+```
+
+#### Regression lines implied by the posterior
+
+```{r}
+datplot <- extract(mod1, 'b')
+idx <- sample(1:nrow(datplot$b), 1000)
+
+p <- ggplot()
+for (i in idx) {
+    intercept <- datplot$b[i, 1]
+    slope <- datplot$b[i, 2]
+    p <- p + geom_abline(intercept = intercept, slope = slope, alpha = .02)
+}
+p + xlim(-3, 3) +
+    ylim(-3, 3) +
+    labs(x = 'Median age marriage (std)',
+         y = 'Divorce rate (std)')
+```
+
+# Alternative models
+
+```{r}
+dat2 <- prepare_data(Divorce ~ Marriage, dat)
+dat3 <- prepare_data(Divorce ~ Marriage + MedianAgeMarriage, dat)
+
+mod2 <- stan(model_code = model, data = dat2)
+mod3 <- stan(model_code = model, data = dat3)
+
+print(mod1, c('b', 'sigma'))
+print(mod2, c('b', 'sigma'))
+print(mod3, c('b', 'sigma'))
+```
+
+# Posterior predictive check (Figure 5.5)
+
+```{r, warning=FALSE}
+posterior <- extract(mod3, 'mu')$mu
+datplot <- dat %>%
+           mutate(`Predicted divorce` = colMeans(posterior),
+                  lb = apply(posterior, 2, quantile, probs = .025),
+                  ub = apply(posterior, 2, quantile, probs = .975),
+                  label = dat$Loc)
+
+ggplot(datplot, aes(Divorce, `Predicted divorce`, ymin = lb, ymax = ub, label = label)) +
+  geom_abline(intercept = 0, slope = 1, linetype = 'dashed') +
+  geom_linerange(alpha = .3) +
+  geom_text() +
+  xlim(-2.5, 2.5) + ylim(-2.5, 2.5)
+```
+
+# Section 5.3
+
+## Height (R code 5.48)
+
+```{r, message=FALSE}
+dat <- read.csv('../rethinking/data/Howell1.csv', sep = ';') %>%
+       mutate(sex = ifelse(male == 1, 2, 1)) %>%
+       list('height' = .$height, 'sex' = .$sex, 'N' = nrow(.), weight = .$weight)
+
+model <- '
+data {
+  int<lower=1> N;        // number of observations
+  vector[N] height;      // outcome
+  int sex[N];            // regressor
+}
+parameters {
+  real<lower=0,upper=50> sigma;    // scale
+  vector[2] a;
+}
+transformed parameters {
+  vector[N] mu;                    // location
+  mu = a[sex];
+}
+model {
+  height ~ normal(mu, sigma);    // probability model
+  sigma ~ uniform(0, 50);        // prior: scale
+  a[1] ~ normal(178, 20);        // prior: women
+  a[2] ~ normal(178, 20);        // prior: men
+}
+generated quantities{
+  real diff_fm;
+  diff_fm = a[1] - a[2];
+}
+'
+mod <- stan(model_code = model, data = dat)
+
+summary(mod, c('a', 'diff_fm'))$summary
+```
+
+# Milk (R code 5.52)
+
+```{r, message=FALSE}
+dat <- read.csv('../rethinking/data/milk.csv', sep = ';') %>%
+       mutate(clade_id = as.integer(as.factor(clade)), K = as.vector(scale(kcal.per.g))) %>%
+       select(K, clade_id) %>%
+       as.list
+dat$N <- length(dat$K)
+      
+model <- '
+data {
+  int<lower=1> N;        // number of observations
+  vector[N] K;           // outcome
+  int clade_id[N];
+}
+parameters {
+  real<lower=0,upper=50> sigma;    // scale
+  vector[4] a;
+}
+transformed parameters {
+  vector[N] mu;                    // location
+  mu = a[clade_id];
+}
+model {
+  K ~ normal(mu, sigma);         // probability model
+  sigma ~ uniform(0, 50);        // prior: scale
+  for (i in 1:4) a[i] ~ normal(0, 0.5);
+}
+'
+mod <- stan(model_code = model, data = dat)
+
+summary(mod, 'a')$summary
+```

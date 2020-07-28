@@ -1,0 +1,138 @@
+---
+title: "Statistical Rethinking 2 Chapter 13"
+author: Vincent Arel-Bundock
+output: html_document
+---
+
+```{r, message=FALSE}
+source('helper.R')
+```
+
+# Section 14:3: Instruments and causal designs
+
+Zero true effect of E is confounded:
+
+```{r, results=FALSE, message=FALSE}
+set.seed(73)
+N <- 500
+U_sim <- rnorm( N )
+Q_sim <- sample( 1:4 , size=N , replace=TRUE )
+E_sim <- rnorm( N , U_sim + Q_sim )
+W_sim <- rnorm( N , U_sim + 0*E_sim )
+stan_data <- list(
+    W = as.vector(scale(W_sim)),
+    E = as.vector(scale(E_sim)),
+    Q = as.vector(scale(Q_sim)),
+    N = N)
+
+stan_program <- '
+data{
+    int N;
+    vector[N] W;
+    vector[N] E;
+    vector[N] Q;
+}
+parameters {
+    real aW;
+    real bEW;
+    real<lower=0> sigma;
+}
+model {
+    vector[N] mu;
+    mu = aW + bEW * E;
+    W ~ normal(mu, sigma);
+    aW ~ normal(0, .2);
+    bEW ~ normal(0, .5);
+    sigma ~ exponential(1);
+}
+'
+
+m14.4 <- fit_model(stan_program, stan_data)
+```
+
+```{r}
+m14.4$summary()
+```
+
+Controlling for the instrument leads to disaster:
+
+```{r, results=FALSE, message=FALSE}
+stan_program <- '
+data{
+    int N;
+    vector[N] W;
+    vector[N] E;
+    vector[N] Q;
+}
+parameters {
+    real aW;
+    real bEW;
+    real bQW;
+    real<lower=0> sigma;
+}
+model {
+    vector[N] mu;
+    mu = aW + bEW * E + bQW * Q;
+    W ~ normal(mu, sigma);
+    aW ~ normal(0, .2);
+    bEW ~ normal(0, .5);
+    bQW ~ normal(0, .5);
+    sigma ~ exponential(1);
+}
+'
+
+m14.5 <- fit_model(stan_program, stan_data)
+```
+
+```{r}
+m14.5$summary()
+```
+
+
+Instrumental variable model:
+
+```{r, results=FALSE, message=FALSE}
+stan_program <- "
+data{
+    int N;
+    vector[N] W;
+    vector[N] E;
+    vector[N] Q;
+}
+parameters {
+    real aE;
+    real aW;
+    real bEW;
+    real bQE;
+    corr_matrix[2] Rho;
+    vector<lower=0>[2] Sigma;
+}
+model {
+    vector[N] mu_w;
+    vector[N] mu_e;
+    Sigma ~ exponential(1);
+    Rho ~ lkj_corr(2);
+    bQE ~ normal(0, .5);
+    bEW ~ normal(0, .5);
+    aW ~ normal(0, .2);
+    aE ~ normal(0, .2);
+    for (j in 1:N) {
+        mu_w[j] = aW + bEW * E[j];
+        mu_e[j] = aE + bQE * Q[j];
+    }
+    vector[2] MU[N];
+    vector[2] YY[N];
+    for (j in 1:N) {
+        MU[j] = [mu_w[j], mu_e[j]]';
+        YY[j] = [W[j], E[j]]';
+    }
+    YY ~ multi_normal(MU, quad_form_diag(Rho, Sigma));
+}
+"
+
+m14.6 <- fit_model(stan_program, stan_data)
+```
+
+```{r}
+m14.6$summary()
+```
