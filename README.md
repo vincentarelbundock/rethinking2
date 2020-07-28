@@ -27,6 +27,13 @@ Many software packages can be used to replicate the models in *Statistical Rethi
 
 `cmdstanr` is a wrapper around the command line `Stan` interface. In my limited experience, it seems more stable, and it produces fewer weird warnings than `rstan`. The `Stan` developers also claim that it is easier to install and use the latest versions of `Stan` with `cmdstanr`.
 
+Install `cmdstanr` from the Stan developers' Github page:
+
+```r
+library(remotes)
+install_github('stan-dev/cmdstanr')
+```
+
 To fit a model using `cmdstanr`, users would typically save the model specification in a file with a `.stan` extension and point the `cmdstan_model` function to this file. For example:
 
 ```r
