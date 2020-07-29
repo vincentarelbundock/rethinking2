@@ -10,7 +10,6 @@ Rendered `Rmarkdown` notebooks can be viewed here:
 * [Chapter 07](https://vincentarelbundock.github.io/rethinking2/07.html)
 * [Chapter 08](https://vincentarelbundock.github.io/rethinking2/08.html)
 * [Chapter 09](https://vincentarelbundock.github.io/rethinking2/09.html)
-* [Chapter 10](https://vincentarelbundock.github.io/rethinking2/10.html)
 * [Chapter 11](https://vincentarelbundock.github.io/rethinking2/11.html)
 * [Chapter 12](https://vincentarelbundock.github.io/rethinking2/12.html)
 * [Chapter 13](https://vincentarelbundock.github.io/rethinking2/13.html)

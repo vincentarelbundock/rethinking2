@@ -1,5 +1,5 @@
 ---
-title: "Statistical Rethinking 2 Chapter 8"
+title: "Statistical Rethinking 2 Chapter 9"
 author: Vincent Arel-Bundock
 output: html_document
 ---
@@ -12,15 +12,15 @@ if (requireNamespace('vincent', quietly = TRUE)) {
 ```
 
 ```{r, message=FALSE}
-
 library(tidyverse)
 library(tidybayes)
+library(bayesplot)
 library(rstan)
 library(patchwork)
 options(mc.cores = parallel::detectCores())
 ```
 
-# Section 9.4
+# Section 9.4: Easy HMC -- ulam
 
 ```{r, warning=FALSE, message=FALSE, results=FALSE} 
 rugged <- read.csv('data/rugged.csv', sep = ';') %>%
@@ -64,23 +64,17 @@ m9.1
 ```
 
 ```{r}
-datplot <- m9.1 %>%
-           gather_draws(a[j], b[j])
-ggplot(datplot, aes(.iteration, .value, color = factor(.chain))) +
-    facet_wrap(j ~ .variable, scale = 'free') +
-    geom_line()
+mcmc_trace(m9.1)
 ```
 
+# Section 9.5: Care and feeding of your Markov chain
 
-# Section 9.5
-
-```{r, fig.asp = .3}
-
+```{r, fig.asp = .3, warning=FALSE, message=FALSE, results=FALSE}
 set.seed(11)
-dat <- data.frame(y = c(-1, 1)) %>%
-       compose_data
+stan_data <- data.frame(y = c(-1, 1)) %>%
+             compose_data
 
-model <- '
+stan_program <- '
 data {
   int<lower=1> n;
   real y[n];
@@ -99,20 +93,14 @@ model {
   sigma ~ exponential(0.0001);
 }
 '
-
-mod <- stan(model_code = model, data = dat, control = list(adapt_delta = 0.99), iter = 1000)
-
-summary(mod, c('alpha', 'sigma'))$summary
-
-mcmc_trace(mod, c('alpha', 'sigma'))
-
+m9.2 <- stan(model_code = stan_program, data = stan_data)
+mcmc_trace(m9.2, c('alpha', 'sigma'))
 ```
 
 More information in priors:
 
-```{r, fig.asp = .3}
-
-model <- '
+```{r, fig.asp = .3, warning=FALSE, message=FALSE, results=FALSE}
+stan_program <- '
 data {
   int<lower=1> n;
   real y[n];
@@ -131,26 +119,18 @@ model {
   sigma ~ exponential(1);
 }
 '
-
-mod <- stan(model_code = model, data = dat, control = list(adapt_delta = 0.99), iter = 10000)
-
-summary(mod, c('mu', 'sigma'))$summary
-
-mcmc_trace(mod, c('alpha', 'sigma'))
-
+m9.3 <- stan(model_code = stan_program, data = stan_data)
+mcmc_trace(m9.3, c('alpha', 'sigma'))
 ```
 
-## Section 9.5.4
+Non-identifiable:
 
-Unidentifiable:
-
-```{r, fig.asp = .3}
-
+```{r, fig.asp = .3, warning=FALSE, message=FALSE, results=FALSE}
 set.seed(41)
 dat <- data.frame(y = rnorm(100)) %>%
        compose_data
 
-model <- '
+stan_program <- '
 data {
   int<lower=1> n;
   real y[n];
@@ -159,11 +139,9 @@ parameters {
   real alpha[2];
   real<lower=0> sigma;
 }
-transformed parameters {
+model {
   real mu;
   mu = alpha[1] + alpha[2];
-}
-model {
   y ~ normal(mu, sigma);
   alpha[1] ~ normal(0, 1000);
   alpha[2] ~ normal(0, 1000);
@@ -171,18 +149,13 @@ model {
 }
 '
 
-mod <- stan(model_code = model, data = dat, control = list(adapt_delta = 0.99), iter = 10000)
-
-summary(mod, c('alpha', 'sigma'))$summary
-
-mcmc_trace(mod, c('alpha[1]', 'alpha[2]', 'sigma'))
-
+m9.4 <- stan(model_code = stan_program, data = stan_data)
+mcmc_trace(m9.4)
 ```
 
 Weakly regularized priors:
 
-```{r, fig.asp = .3}
-
+```{r, fig.asp = .3, warning=FALSE, message=FALSE, results=FALSE}
 model <- '
 data {
   int<lower=1> n;
@@ -204,10 +177,6 @@ model {
 }
 '
 
-mod <- stan(model_code = model, data = dat, control = list(adapt_delta = 0.99), iter = 10000)
-
-summary(mod, c('alpha', 'sigma'))$summary
-
-mcmc_trace(mod, c('alpha[1]', 'alpha[2]', 'sigma'))
-
+m9.5 <- stan(model_code = model, data = dat, control = list(adapt_delta = 0.99), iter = 10000)
+mcmc_trace(m9.5)
 ```
