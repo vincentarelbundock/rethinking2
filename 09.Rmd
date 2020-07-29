@@ -4,37 +4,35 @@ author: Vincent Arel-Bundock
 output: html_document
 ---
 
+```{r, include=FALSE}
+# set default graphics theme if Vincent's personal package is installed
+if (requireNamespace('vincent', quietly = TRUE)) {
+        vincent::theming()
+}
+```
+
 ```{r, message=FALSE}
 
 library(tidyverse)
-library(rstan)
 library(tidybayes)
+library(rstan)
 library(patchwork)
-library(ghibli)
-library(bayesplot)
 options(mc.cores = parallel::detectCores())
-theme_custom <- theme_minimal()
-theme_set(theme_classic())
-knitr::opts_chunk$set(message=FALSE, warning=FALSE)
-
 ```
 
 # Section 9.4
 
-```{r, message=FALSE}
-
-# load and standardize data
-rugged <- read.csv('../rethinking/data/rugged.csv', sep = ';') %>%
+```{r, warning=FALSE, message=FALSE, results=FALSE} 
+rugged <- read.csv('data/rugged.csv', sep = ';') %>%
           mutate(log_gdp = log(rgdppc_2000),
                  log_gdp_std = log_gdp / mean(log_gdp, na.rm = TRUE),
                  rugged_std = rugged / max(rugged, na.rm = TRUE),
                  region = ifelse(cont_africa == 1, 'Africa', 'Not Africa')) %>%
           select(country, log_gdp_std, rugged_std, region) %>%
           drop_na
-dat <- compose_data(rugged)
+stan_data <- compose_data(rugged)
 
-# Stan model
-model <- '
+stan_program <- '
 data {
   int<lower=1> n;        // number of observations
   vector[n] log_gdp_std; // outcome
@@ -46,13 +44,11 @@ parameters {
   vector[2] a;
   vector[2] b;
 }
-transformed parameters{
+model {
   vector[n] mu;
   for (i in 1:n) {
     mu[i] = a[region[i]] + b[region[i]] * (rugged_std[i] - 0.215);
   }
-}
-model {
   a ~ normal(1, 0.1);
   b ~ normal(0, 0.3);
   sigma ~ exponential(1);
@@ -60,11 +56,21 @@ model {
 }
 '
 
-mod <- stan(model_code = model, data = dat, control = list(adapt_delta = 0.99), iter = 10000)
-
-summary(mod, c('a', 'b'))$summary
-
+m9.1 <- stan(model_code = stan_program, data = stan_data)
 ```
+
+```{r}
+m9.1
+```
+
+```{r}
+datplot <- m9.1 %>%
+           gather_draws(a[j], b[j])
+ggplot(datplot, aes(.iteration, .value, color = factor(.chain))) +
+    facet_wrap(j ~ .variable, scale = 'free') +
+    geom_line()
+```
+
 
 # Section 9.5
 

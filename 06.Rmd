@@ -6,7 +6,7 @@ author: Vincent Arel-Bundock
 ```{r, include=FALSE}
 # set default graphics theme if Vincent's personal package is installed
 if (requireNamespace('vincent', quietly = TRUE)) {
-            vincent::theming()
+    vincent::theming()
 }
 ```
 

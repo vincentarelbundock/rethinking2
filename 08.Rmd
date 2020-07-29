@@ -4,46 +4,80 @@ author: Vincent Arel-Bundock
 output: html_document
 ---
 
-```{r, message=FALSE}
-
-library(tidyverse)
-library(rstan)
-library(tidybayes)
-library(patchwork)
-library(ghibli)
-options(mc.cores = parallel::detectCores())
-theme_custom <- theme_minimal()
-theme_set(theme_classic())
-knitr::opts_chunk$set(message=FALSE, warning=FALSE)
-
+```{r, include=FALSE}
+# set default graphics theme if Vincent's personal package is installed
+if (requireNamespace('vincent', quietly = TRUE)) {
+    vincent::theming()
+}
 ```
 
-# Section 8.1.2
+```{r, warning=FALSE, message=FALSE, results=FALSE} 
+library(tidyverse)
+library(tidybayes)
+library(rstan)
+library(patchwork)
+options(mc.cores = parallel::detectCores())
+```
 
-```{r, message=FALSE}
+# Section 8.1: Building an interaction
 
-# load and standardize data
-rugged <- read.csv('../rethinking/data/rugged.csv', sep = ';') %>%
+```{r, warning=FALSE, message=FALSE, results=FALSE}
+rugged <- read.csv('data/rugged.csv', sep = ';') %>%
           mutate(log_gdp = log(rgdppc_2000),
                  log_gdp_std = log_gdp / mean(log_gdp, na.rm = TRUE),
                  rugged_std = rugged / max(rugged, na.rm = TRUE),
                  cid = ifelse(cont_africa == 1, 1, 2),
                  Region = ifelse(cont_africa == 1, 'Africa', 'Not Africa')) %>%
-          select(country, log_gdp_std, rugged_std, Region, cid)
+          select(country, log_gdp_std, rugged_std, Region, cid) %>%
+          filter(!is.na(log_gdp_std))
 
-# complete observations
-rugged_complete <- rugged %>%
-                   filter(!is.na(log_gdp_std))
-dat <- compose_data(rugged_complete)
-dat$x_new <- seq(min(dat$rugged_std), max(dat$rugged_std), length.out = 100)
-
+stan_data <- rugged %>% compose_data
+stan_data$x_new <- seq(min(rugged$rugged_std), max(rugged$rugged_std), length.out = 100)
 ```
 
-# R code 8.8
+```{r, warning=FALSE, message=FALSE, results=FALSE}
+stan_program <- '
+data {
+  int<lower=1> n;        // number of observations
+  vector[n] log_gdp_std; // outcome
+  vector[n] rugged_std;  // regressor
+  vector[100] x_new;     // prediction x
+  int cid[n];            // africa indicator
+}
+parameters {
+  real<lower=0> sigma;
+  real a;
+  real b;
+}
+transformed parameters {
+  vector[n] mu;                    // location
+  mu = a + b * (rugged_std - 0.215);
+}
+model {
+  log_gdp_std ~ normal(mu, sigma);
+  sigma ~ exponential(1);
+  a ~ normal(1, 0.1);
+  b ~ normal(0, 0.3);
+}
+generated quantities {
+  matrix[100, 2] yhat;
+  for (i in 1:100) {
+    for (j in 1:2) {
+      yhat[i, j] = a + b * (x_new[i] - 0.215);
+    }
+  }
+}
+'
+
+m8.1 <- stan(model_code = stan_program, data = stan_data)
+```
 
 ```{r}
+summary(m8.1, c('a', 'b', 'sigma'))$ summary
+```
 
-model <- '
+```{r, warning=FALSE, message=FALSE, results=FALSE}
+stan_program <- '
 data {
   int<lower=1> n;        // number of observations
   vector[n] log_gdp_std; // outcome
@@ -76,31 +110,33 @@ generated quantities {
 }
 '
 
-mod <- stan(model_code = model, data = dat, control = list(adapt_delta = 0.99), iter = 10000)
-
-z = mod %>% 
-    spread_draws(yhat[i, j]) %>%
-    median_qi() %>%
-    left_join(tibble(i = 1:100, ruggedness = dat$x_new), by = 'i') %>%
-    mutate(Region = ifelse(j == 1, 'Africa', 'Not Africa'))
-
-ggplot(z) + 
-    geom_ribbon(aes(x = ruggedness, ymax = .upper, ymin = .lower, fill = Region), alpha = .1) +
-    geom_line(aes(x = ruggedness, y = yhat, color = Region)) +
-    geom_point(data = rugged_complete, aes(rugged_std, log_gdp_std, color = Region)) +
-    scale_colour_ghibli_d('KikiMedium', direction = -1) +
-    scale_fill_ghibli_d('KikiMedium', direction = -1) +
-    labs(x = 'Ruggedness (standardized)',
-         y = 'log GDP (as proportion of mean)',
-         color = '', fill = '')
-
+m8.2 <- stan(model_code = stan_program, data = stan_data)
 ```
 
-# Section 8.1.3
+```{r}
+summary(m8.2, c('a', 'b', 'sigma'))$ summary
+```
 
 ```{r}
 
-model <- '
+datplot <- m8.2 %>% 
+           spread_draws(yhat[i, j]) %>%
+           median_qi() %>%
+           left_join(tibble(i = 1:100, ruggedness = stan_data$x_new), by = 'i') %>%
+           mutate(Region = ifelse(j == 1, 'Africa', 'Not Africa'))
+
+ggplot(datplot) + 
+    geom_ribbon(aes(x = ruggedness, ymax = .upper, ymin = .lower, fill = Region), alpha = .1) +
+    geom_line(aes(x = ruggedness, y = yhat, color = Region)) +
+    geom_point(data = rugged, aes(rugged_std, log_gdp_std, color = Region)) +
+    labs(x = 'Ruggedness (standardized)',
+         y = 'log GDP (as proportion of mean)',
+         color = '', fill = '')
+```
+
+
+```{r, warning=FALSE, message=FALSE, results=FALSE}
+stan_program <- '
 data {
   int<lower=1> n;        // number of observations
   vector[n] log_gdp_std; // outcome
@@ -114,7 +150,7 @@ parameters {
   vector[2] b;
 }
 transformed parameters {
-  vector[n] mu;
+  vector[n] mu;                    // location
   for (i in 1:n) {
     mu[i] = a[cid[i]] + b[cid[i]] * (rugged_std[i] - 0.215);
   }
@@ -122,82 +158,104 @@ transformed parameters {
 model {
   log_gdp_std ~ normal(mu, sigma);
   sigma ~ exponential(1);
-  for (i in 1:2) {
-    a[i] ~ normal(1, 0.1);
-    b[i] ~ normal(0, 0.3);
-  }
+  a ~ normal(1, 0.1);
+  b ~ normal(0, 0.3);
 }
 generated quantities {
   matrix[100, 2] yhat;
-  vector[100] yhatdiff;
   for (i in 1:100) {
     for (j in 1:2) {
       yhat[i, j] = a[j] + b[j] * (x_new[i] - 0.215);
     }
-    yhatdiff[i] = (a[1] + b[1] * (x_new[i] - 0.215))  -
-                  (a[2] + b[2] * (x_new[i] - 0.215));
   }
 }
 '
-mod <- stan(model_code = model, data = dat, control = list(adapt_delta = 0.99), iter = 10000)
 
-z = mod %>% 
-    spread_draws(yhat[i, j]) %>%
-    median_qi() %>%
-    left_join(tibble(i = 1:100, ruggedness = dat$x_new), by = 'i') %>%
-    mutate(Region = ifelse(j == 1, 'Africa', 'Not Africa'))
+m8.3 <- stan(model_code = stan_program, data = stan_data)
+```
 
-ggplot(z) + 
-    geom_ribbon(aes(x = ruggedness, ymax = .upper, ymin = .lower, fill = Region), alpha = .2) +
+```{r}
+summary(m8.3, c('a', 'b', 'sigma'))$ summary
+```
+
+```{r}
+datplot <- m8.3 %>% 
+           spread_draws(yhat[i, j]) %>%
+           median_qi() %>%
+           left_join(tibble(i = 1:100, ruggedness = stan_data$x_new), by = 'i') %>%
+           mutate(Region = ifelse(j == 1, 'Africa', 'Not Africa'))
+
+ggplot(datplot) + 
+    geom_ribbon(aes(x = ruggedness, ymax = .upper, ymin = .lower, fill = Region), alpha = .1) +
     geom_line(aes(x = ruggedness, y = yhat, color = Region)) +
-    geom_point(data = rugged_complete, aes(rugged_std, log_gdp_std, color = Region)) +
-    scale_colour_ghibli_d('KikiMedium', direction = -1) +
-    scale_fill_ghibli_d('KikiMedium', direction = -1) +
+    geom_point(data = rugged, aes(rugged_std, log_gdp_std, color = Region)) +
     labs(x = 'Ruggedness (standardized)',
          y = 'log GDP (as proportion of mean)',
          color = '', fill = '')
-
 ```
 
-# Section 8.2
+# Section 8.3: Continuous interactions
 
-```{r}
-
-z = mod %>% 
-    spread_draws(yhatdiff[i]) %>%
-    median_qi() %>%
-    left_join(tibble(i = 1:100, ruggedness = dat$x_new), by = 'i')
-
-ggplot(z, aes(x = ruggedness, y = yhatdiff, ymax = .upper, ymin = .lower)) + 
-    geom_ribbon(, alpha = .2) +
-    geom_line(aes(x = ruggedness, y = yhatdiff)) +
-    scale_colour_ghibli_d('KikiMedium', direction = -1) +
-    scale_fill_ghibli_d('KikiMedium', direction = -1) +
-    geom_hline(yintercept = 0, linetype = 'dashed') +
-    annotate('text', label = "Africa higher GDP", x = .12, y = .02) +
-    annotate('text', label = "Africa lower GDP", x = .12, y = -.02) +
-    labs(x = 'Ruggedness (standardized)',
-         y = 'log GDP (as proportion of mean)',
-         color = '', fill = '')
-
-
-```
-
-# Section 8.3
-
-
-```{r}
-
-tulips <- read.csv('../rethinking/data/tulips.csv', sep = ';') %>%
+```{r, warning=FALSE, message=FALSE, results=FALSE, out.width='100%', fig.asp = .4}
+tulips <- read.csv('data/tulips.csv', sep = ';') %>%
           mutate(blooms_std = blooms / max(blooms),
                  water_cent = water - mean(water),
                  shade_cent = shade - mean(shade))
-dat <- compose_data(tulips)
-dat$pred <- expand_grid(water_cent = c(-1:1),
+stan_data <- compose_data(tulips)
+stan_data$pred <- expand_grid(water_cent = c(-1:1),
                         shade_cent = c(-1:1))
-dat$pred_n <- nrow(dat$pred)
+stan_data$pred_n <- nrow(stan_data$pred)
 
-model <- '
+stan_program <- '
+data {
+  int<lower=1> n;      
+  vector[n] blooms_std; 
+  vector[n] water_cent; 
+  vector[n] shade_cent; 
+  int<lower=1> pred_n;
+  matrix[pred_n, 2] pred;
+}
+parameters {
+  real<lower=0> sigma;
+  real a;
+  real bw;
+  real bs;
+}
+transformed parameters {
+  vector[n] mu;
+  mu = a + bw * water_cent + bs * shade_cent;
+}
+model {
+  blooms_std ~ normal(mu, sigma);
+  sigma ~ exponential(1);
+  bw ~ normal(0, 0.25);
+  bs ~ normal(0, 0.25);
+}
+generated quantities {
+  vector[pred_n] yhat;
+  for (i in 1:pred_n) {
+    yhat[i] = a + bw * pred[i, 1] + bs * pred[i, 2];
+  }
+}
+'
+
+m8.4 <- stan(model_code = stan_program, data = stan_data)#, control = list(adapt_delta = 0.99), iter = 10000)
+
+pred <- stan_data$pred
+pred$i <- 1:nrow(pred)
+datplot <- m8.4 %>% 
+           spread_draws(yhat[i]) %>%
+           mean_qi() %>%
+           left_join(pred, by = 'i')
+ggplot(datplot, aes(water_cent, yhat, ymin = .lower, ymax = .upper)) +
+    geom_pointrange() +
+    facet_grid(.~shade_cent) +
+    theme_classic() +
+    labs(x = 'Water', y = 'Predicted blooms')
+```
+
+```{r, warning=FALSE, message=FALSE, results=FALSE, out.width='100%', fig.asp = .4}
+stan_program <- '
 data {
   int<lower=1> n;      
   vector[n] blooms_std; 
@@ -231,17 +289,19 @@ generated quantities {
   }
 }
 '
-mod <- stan(model_code = model, data = dat, control = list(adapt_delta = 0.99), iter = 10000)
 
-z = mod %>% 
-    spread_draws(yhat[i]) %>%
-    median_qi() %>%
-    bind_cols(dat$pred) %>%
-    mutate(shade_cent = paste('Shade:', shade_cent))
+m8.5 <- stan(model_code = stan_program, data = stan_data)
 
-ggplot(z, aes(water_cent, yhat, ymin = .lower, ymax = .upper)) +
+pred <- stan_data$pred
+pred$i <- 1:nrow(pred)
+datplot <- m8.5 %>% 
+           spread_draws(yhat[i]) %>%
+           mean_qi() %>%
+           left_join(pred, by = 'i')
+ggplot(datplot, aes(water_cent, yhat, ymin = .lower, ymax = .upper)) +
     geom_pointrange() +
-    facet_grid(~shade_cent) +
-    labs(x = 'Water', y = 'Blooms')
-
+    facet_grid(.~shade_cent) +
+    theme_classic() +
+    labs(x = 'Water', y = 'Predicted blooms')
 ```
+
