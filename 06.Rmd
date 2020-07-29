@@ -1,0 +1,419 @@
+---
+title: "Statistical Rethinking 2: Chapter 6"
+author: Vincent Arel-Bundock
+---
+
+```{r, include=FALSE}
+# set default graphics theme if Vincent's personal package is installed
+if (requireNamespace('vincent', quietly = TRUE)) {
+            vincent::theming()
+}
+```
+
+```{r, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(tidybayes)
+library(rstan)
+library(patchwork)
+options(mc.cores = 4)
+```
+
+# Section 6.1: Multicollinearity
+
+```{r, results=FALSE, message=FALSE, warning=FALSE}
+set.seed(909)
+N <- 100
+stan_data <- tibble(height = rnorm(N,10,2),
+                    leg_prop = runif(N,0.4,0.5),
+                    leg_left = leg_prop*height + rnorm( N , 0 , 0.02 ),
+                    leg_right = leg_prop*height + rnorm( N , 0 , 0.02 )) %>%
+             compose_data
+
+stan_program <- '
+data {
+    int n;
+    vector[n] height;
+    vector[n] leg_left;
+    vector[n] leg_right;
+}
+parameters {
+    real a;
+    real bl;
+    real br;
+    real<lower=0> sigma;
+}
+model {
+    vector[n] mu;
+    mu = a + bl * leg_left + br * leg_right;
+    height ~ normal(mu, sigma);
+    a ~ normal(10, 100);
+    bl ~ normal(2, 10);
+    br ~ normal(2, 10);
+    sigma ~ exponential(1);
+}
+'
+
+m6.1 <- stan(model_code = stan_program, data = stan_data)
+```
+
+```{r, out.width='100%', fig.asp=.5}
+m6.1
+
+# Figure 6.2
+datplot <- m6.1 %>% 
+           spread_draws(bl, br) %>%
+           mutate(bl_br_sum = bl + br)
+
+p1 <- ggplot(datplot, aes(br, bl)) + geom_point(alpha = .1)
+p2 <- ggplot(datplot, aes(bl_br_sum)) + geom_density()
+p1 + p2
+```
+
+```{r, results=FALSE, message=FALSE, warning=FALSE}
+stan_program <- '
+data {
+    int n;
+    vector[n] height;
+    vector[n] leg_left;
+    vector[n] leg_right;
+}
+parameters {
+    real a;
+    real bl;
+    real<lower=0> sigma;
+}
+model {
+    vector[n] mu;
+    mu = a + bl * leg_left;
+    height ~ normal(mu, sigma);
+    a ~ normal(10, 100);
+    bl ~ normal(2, 10);
+    sigma ~ exponential(1);
+}
+'
+m6.2 <- stan(model_code = stan_program, data = stan_data)
+```
+
+```{r}
+m6.2
+```
+
+```{r, warning=FALSE, message=FALSE, results=FALSE}
+
+dat <- read.csv('data/milk.csv', sep = ';') %>%
+       mutate(K = as.vector(scale(kcal.per.g)),
+              F = as.vector(scale(perc.fat)),
+              L = as.vector(scale(perc.lactose)))
+
+stan_program <- '
+data {
+    int n;
+    int k;
+    matrix[n, k] X;
+    vector[n] y;
+}
+parameters {
+    vector[k] b;
+    real<lower=0> sigma;
+}
+model {
+    vector[n] mu;
+    mu = X * b;
+    y ~ normal(mu, sigma);
+    b ~ normal(0, 0.5);
+    sigma ~ exponential(1);
+}
+'
+
+stan_data <- compose_data(dat,
+                          y = K,
+                          X = model.matrix(~F, dat),
+                          k = ncol(X))
+m6.3 <- stan(model_code = stan_program, data = stan_data)
+
+stan_data <- compose_data(dat,
+                          y = K,
+                          X = model.matrix(~L, dat),
+                          k = ncol(X))
+m6.4 <- stan(model_code = stan_program, data = stan_data)
+
+stan_data <- compose_data(dat,
+                          y = K,
+                          X = model.matrix(~F + L, dat),
+                          k = ncol(X))
+m6.5 <- stan(model_code = stan_program, data = stan_data)
+
+```
+
+```{r}
+m6.3
+m6.4
+m6.5
+```
+
+# Section 6.2: Post-treatment bias
+
+```{r, warning=FALSE, message=FALSE, results=FALSE}
+## R code 6.13
+set.seed(71)
+# number of plants
+N <- 100
+
+# simulate initial heights
+h0 <- rnorm(N,10,2)
+
+# assign treatments and simulate fungus and growth
+treatment <- rep( 0:1 , each=N/2 )
+fungus <- rbinom( N , size=1 , prob=0.5 - treatment*0.4 )
+h1 <- h0 + rnorm(N, 5 - 3*fungus)
+
+# compose a clean data frame
+d <- data.frame( h0=h0 , h1=h1 , treatment=treatment , fungus=fungus )
+
+stan_data <- compose_data(d)
+
+stan_program <- '
+data {
+    int n;
+    vector[n] h1;
+    vector[n] h0;
+}
+parameters {
+    real p;
+    real<lower=0> sigma;
+}
+model {
+    vector[n] mu;
+    mu = h0 * p;
+    h1 ~ normal(mu, sigma);
+    sigma ~ exponential(1);
+    p ~ lognormal(0, 0.25);
+}
+'
+
+m6.6 <- stan(model_code = stan_program, data = stan_data)
+```
+
+```{r}
+m6.6
+```
+
+```{r, warning=FALSE, message=FALSE, results=FALSE}
+stan_program <- '
+data {
+    int n;
+    vector[n] h1;
+    vector[n] h0;
+    vector[n] treatment;
+    vector[n] fungus;
+}
+parameters {
+    real bt;
+    real bf;
+    real a;
+    real<lower=0> sigma;
+}
+model {
+    vector[n] mu;
+    vector[n] p;
+    p = a + bt * treatment + bf * fungus;
+    mu = h0 .* p;
+    h1 ~ normal(mu, sigma);
+    a ~ lognormal(0, 0.25);
+    bt ~ normal(0, 0.5);
+    bf ~ normal(0, 0.5);
+    sigma ~ exponential(1);
+}
+'
+
+m6.7 <- stan(model_code = stan_program, data = stan_data)
+```
+
+```{r}
+m6.7
+```
+
+```{r, warning=FALSE, message=FALSE, results=FALSE}
+stan_program <- '
+data {
+    int n;
+    vector[n] h1;
+    vector[n] h0;
+    vector[n] treatment;
+    vector[n] fungus;
+}
+parameters {
+    real bt;
+    real a;
+    real<lower=0> sigma;
+}
+model {
+    vector[n] mu;
+    vector[n] p;
+    p = a + bt * treatment;
+    mu = h0 .* p;
+    h1 ~ normal(mu, sigma);
+    a ~ lognormal(0, 0.25);
+    bt ~ normal(0, 0.5);
+    sigma ~ exponential(1);
+}
+'
+
+m6.8 <- stan(model_code = stan_program, data = stan_data)
+```
+
+```{r}
+m6.8
+```
+
+# Section 6.3: Collider bias
+
+```{r, warning=FALSE, message=FALSE, results=FALSE}
+# remotes::install_github('rmcelreath/rethinking')
+library(rethinking)
+stan_data <- sim_happiness(seed = 1977, N_years = 1000) %>%
+             filter(age > 17) %>%
+             mutate(age = (age - 18) / (65 - 18),
+                    married = married + 1) %>%
+             compose_data
+
+stan_program <- '
+data {
+    int n;
+    vector[n] happiness;
+    vector[n] age;
+    int married[n];
+}
+parameters {
+    real a[2];
+    real bA;
+    real sigma;
+}
+model {
+    vector[n] mu;
+    for (i in 1:n) {
+        mu[i] = a[married[i]] + bA * age[i];
+    }
+    happiness ~ normal(mu, sigma);
+    a ~ normal(0, 1);
+    bA ~ normal(0, 2);
+    sigma ~ exponential(1);
+}
+'
+
+m6.9 <- stan(model_code = stan_program, data = stan_data)
+```
+
+```{r}
+m6.9
+```
+
+```{r, warning=FALSE, message=FALSE, results=FALSE}
+stan_program <- '
+data {
+    int n;
+    vector[n] happiness;
+    vector[n] age;
+    int married[n];
+}
+parameters {
+    real a;
+    real bA;
+    real sigma;
+}
+model {
+    vector[n] mu;
+    for (i in 1:n) {
+        mu[i] = a + bA * age[i];
+    }
+    happiness ~ normal(mu, sigma);
+    a ~ normal(0, 1);
+    bA ~ normal(0, 2);
+    sigma ~ exponential(1);
+}
+'
+
+m6.10 <- stan(model_code = stan_program, data = stan_data)
+```
+
+```{r}
+m6.10
+```
+
+
+```{r, warning=FALSE, message=FALSE, results=FALSE}
+
+
+## R code 6.25
+N <- 200  # number of grandparent-parent-child triads
+b_GP <- 1 # direct effect of G on P
+b_GC <- 0 # direct effect of G on C
+b_PC <- 1 # direct effect of P on C
+b_U <- 2  # direct effect of U on P and C
+
+## R code 6.26
+set.seed(1)
+U <- 2*rbern( N , 0.5 ) - 1
+G <- rnorm( N )
+P <- rnorm( N , b_GP*G + b_U*U )
+C <- rnorm( N , b_PC*P + b_GC*G + b_U*U )
+d <- data.frame( C=C , P=P , G=G , U=U )
+
+stan_data <- compose_data(d)
+
+stan_program <- '
+data {
+    int n;
+    vector[n] C;
+    vector[n] P;
+    vector[n] G;
+}
+parameters {
+    real a;
+    real b_PC;
+    real b_GC;
+    real<lower=0> sigma;
+}
+model {
+    vector[n] mu;
+    mu = a + b_PC * P + b_GC * G;
+    C ~ normal(mu, sigma);
+    sigma ~ exponential(1);
+    b_PC ~ normal(0, 1);
+    b_GC ~ normal(0, 1);
+}
+'
+m6.11 <- stan(model_code = stan_program, data = stan_data)
+
+stan_program <- '
+data {
+    int n;
+    vector[n] C;
+    vector[n] P;
+    vector[n] G;
+    vector[n] U;
+}
+parameters {
+    real a;
+    real b_PC;
+    real b_GC;
+    real b_U;
+    real<lower=0> sigma;
+}
+model {
+    vector[n] mu;
+    mu = a + b_PC * P + b_GC * G + b_U * U;
+    C ~ normal(mu, sigma);
+    sigma ~ exponential(1);
+    b_PC ~ normal(0, 1);
+    b_GC ~ normal(0, 1);
+    b_U ~ normal(0, 1);
+}
+'
+m6.12 <- stan(model_code = stan_program, data = stan_data)
+```
+
+```{r}
+m6.11
+m6.12
+```
