@@ -4,36 +4,44 @@ author: Vincent Arel-Bundock
 output: html_document
 ---
 
-```{r, message=FALSE}
-
-library(tidyverse)
-library(rstan)
-library(tidybayes)
-library(rethinking)
-cols <- c("#D1B79EFF", "#7EBAC2FF", "#9E8356FF", "#0E84B4FF", "#B50A2AFF", "#333544FF", "#1C1A1FFF")
-options(mc.cores = parallel::detectCores(),
-        modelsummary_default = 'kableExtra',
-        ggplot2.discrete.fill = cols,
-        ggplot2.discrete.color = cols)
-theme_custom <- theme_minimal()
-theme_set(theme_classic())
-knitr::opts_chunk$set(message=FALSE, warning=FALSE)
-
+```{r, include=FALSE}
+# set default graphics theme if Vincent's personal package is installed
+if (requireNamespace('vincent', quietly = TRUE)) {
+        vincent::theming()
+}
 ```
 
-# Section 11.1
-
 ```{r, message=FALSE}
+library(tidyverse)
+library(tidybayes)
+library(rstan)
+library(rethinking)
+options(mc.cores = 4)
+```
 
-# load and standardize data
+# TODO
+
+* Comapre results of everything
+* m11.2
+* m11.3
+* m11.4 produces slightly different results
+* m11.5
+
+Was the `R` number generator different when the book was written? I know it changed recently.
+
+# Section 11.1: Binomial regression
+
+```{r, warning=FALSE, message=FALSE, results=FALSE}
 chimpanzees <- read.csv('data/chimpanzees.csv', sep = ';') %>%
                mutate(treatment = factor(1 + prosoc_left + 2 * condition),
                       actor = factor(actor))
 
-dat <- compose_data(chimpanzees)
-dat$n_predictions <- dat$n_actor * dat$n_treatment
+stan_data <- compose_data(chimpanzees,
+                          n_actor = n_distinct(actor),
+                          n_treatment = n_distinct(treatment),
+                          n_predictions = n_actor * n_treatment)
 
-model <- '
+stan_program <- '
 data {
   int<lower=1> n;                       
   int<lower=0, upper=1> pulled_left[n];
@@ -51,124 +59,103 @@ model {
 }
 '
 
-mod <- stan(model_code = model, data = dat, control = list(adapt_delta = 0.99), iter = 10000)
-
-summary(mod, 'p')$summary
-
+m11.1 <- stan(model_code = stan_program, data = stan_data)
 ```
 
-## R code 11.11
+```{r}
+m11.1
+```
+
+My results for model `m11.4` are somewhat different from text. Signs and magnitudes are similar. Not sure why.
 
 ```{r, message=FALSE, fig.asp = .3}
-
-model <- '
+stan_program <- '
 data {
-  int<lower=1> n;                       
-  int<lower=1> n_treatment;                       
-  int<lower=1> n_actor;
-  int<lower=1> n_predictions;
-  int<lower=1> actor[n];
-  int<lower=0, upper=1> pulled_left[n];
-  int<lower=0, upper=4> treatment[n];
+  int n;                       
+  int n_treatment;                       
+  int n_actor;
+  int n_predictions;
+  int actor[n];
+  int pulled_left[n];
+  int treatment[n];
 }
 parameters {
   real a[n_actor];
   real b[n_treatment];
 }
 transformed parameters{
-  real<lower=0, upper=1> p[n];
+  vector[n] p;
   for (i in 1:n) {
-      p[i] = inv_logit(a[actor[i]] + b[treatment[i]]);
+      p[i] = a[actor[i]] + b[treatment[i]];
+      p[i] = inv_logit(p[i]);
   }
 }
 model {
   a ~ normal(1, 1.5);
   b ~ normal(0, 0.5);
-  pulled_left ~ bernoulli(p);
+  pulled_left ~ binomial(1, p);
 }
 generated quantities {
   real db13;
   real db24;
-  int k;
-  real<lower=0, upper=1> predictions[n_predictions];
   db13 = b[1] - b[3];
   db24 = b[2] - b[4];
-  k = 0;
-  for (i in 1:n_actor) {
-    for (j in 1:n_treatment) {
-      k += 1;
-      predictions[k] = inv_logit(a[i] + b[j]);
-    }
-  }
 }
 '
 
-mod <- stan(model_code = model, data = dat, control = list(adapt_delta = 0.99), iter = 1000)
-
-tmp <- mod %>% 
-       spread_draws(a[actor]) %>%
-       median_qi() %>%
-       mutate(actor = factor(actor))
-
-ggplot(tmp, aes(a, actor, xmin = .lower, xmax = .upper)) +
-  geom_pointrange()
-
+m11.4 <- stan(model_code = stan_program, data = stan_data)
 ```
 
-```{r, fig.asp=.2}
-tmp <- mod %>% 
-       spread_draws(b[treatment]) %>%
-       median_qi() %>%
-       mutate(treatment = c('R/N', 'L/N', 'R/P', 'L/P')[treatment])
-
-ggplot(tmp, aes(b, treatment, xmin = .lower, xmax = .upper)) +
-  geom_vline(linetype = 'dashed', xintercept = 0) +
-  geom_pointrange()
-
+```{r}
+datplot <- m11.4 %>% 
+           spread_draws(a[actor]) %>%
+           mean_qi() %>%
+           mutate(actor = factor(actor, 7:1))
+ggplot(datplot, aes(a, actor, xmin = .lower, xmax = .upper)) +
+    geom_vline(xintercept = 0, linetype = 'dashed') +
+    geom_pointrange()
 ```
 
 ```{r, fig.asp = .2}
-tmp <- mod %>% 
-       gather_draws(db13, db24) %>%
-       median_qi()
+datplot <- m11.4 %>% 
+           spread_draws(b[treatment]) %>%
+           mean_qi() %>%
+           mutate(treatment = c("R/N", "L/N", "R/P", "L/P")[treatment])
+ggplot(datplot, aes(b, treatment, xmin = .lower, xmax = .upper)) +
+    geom_vline(xintercept = 0, linetype = 'dashed') +
+    geom_pointrange()
+```
 
-ggplot(tmp, aes(.value, .variable, xmin = .lower, xmax = .upper)) +
+```{r, fig.asp = .2}
+datplot <- m11.4 %>% 
+           gather_draws(db13, db24) %>%
+           median_qi()
+ggplot(datplot, aes(.value, .variable, xmin = .lower, xmax = .upper)) +
   geom_vline(linetype = 'dashed', xintercept = 0) +
   geom_pointrange() + 
   labs(x = 'Value', y = '')
 ```
 
-## Figure 11.4
+```{r, fig.asp=.4, out.width='100%'}
 
-```{r, fig.asp=.5, out.width='100%'}
-tmp <- mod %>% 
-       spread_draws(predictions[k]) %>%
-       median_qi() %>%
-       mutate(actor = NA, treatment = NA)
-k <- 0
-for (i in 1:dat$n_actor) {
-    for (j in 1:dat$n_treatment) {
-        k <- k + 1
-        tmp$actor[k] <- i
-        tmp$treatment[k] <- j
-    }
-}
-tmp <- tmp %>% 
-       mutate(treatment = c('R/N', 'L/N', 'R/P', 'L/P')[treatment],
-              treatment = factor(treatment, levels = c('R/N', 'L/N', 'R/P', 'L/P')))
+tmp <- chimpanzees %>% mutate(i = 1:n())
+datplot <- m11.4 %>% 
+           spread_draws(p[i]) %>%
+           mean_qi() %>%
+           left_join(tmp, by = 'i')  %>%
+           mutate(treatment = c('R/N', 'L/N', 'R/P', 'L/P')[treatment],
+                  treatment = factor(treatment, levels = c('R/N', 'L/N', 'R/P', 'L/P')))
 
-ggplot(tmp, aes(treatment, predictions, ymin = .lower, ymax = .upper, label = treatment)) +
+ggplot(datplot, aes(treatment, p, ymin = .lower, ymax = .upper, label = treatment)) +
   geom_text() +
-  geom_hline(linetype = 'dashed', yintercept = 0) +
-  geom_linerange(alpha = .2) + 
+  geom_hline(linetype = 'dashed', yintercept = 0.5) +
+  geom_linerange(alpha = .1) + 
   facet_grid(~ actor) +
-  labs(x = 'Value', y = '')
+  labs(x = 'Value', y = '') +
+  theme_classic()
 ```
 
-# Section 11.1.3
-
-```{r}
-
+```{r, warning=FALSE, message=FALSE, results=FALSE}
 chimpanzees <- read.csv('data/chimpanzees.csv', sep = ';') %>%
                mutate(treatment = factor(1 + prosoc_left + 2 * condition),
                       actor = factor(actor),
@@ -176,9 +163,9 @@ chimpanzees <- read.csv('data/chimpanzees.csv', sep = ';') %>%
                       cond = condition + 1) %>%
                group_by(treatment, actor, side, cond) %>%
                summarize(left_pulls = sum(pulled_left))
-dat <- compose_data(chimpanzees)
+stan_data <- compose_data(chimpanzees)
 
-model <- '
+stan_program <- '
 data {
   int n;
   int n_actor;
@@ -201,23 +188,21 @@ model {
   left_pulls ~ binomial(18, p);
 }
 '
-mod <- stan(model_code = model, data = dat)
-
-summary(mod, c('a', 'b'))$summary
-
+m11.6 <- stan(model_code = stan_program, data = stan_data)
 ```
 
-# Section 11.1.4
+```{r}
+m11.6
+```
 
-```{r, fig.asp = .7}
-
+```{r, fig.asp = .7, out.width='100%'}
 UCBadmit <- read.csv('data/UCBadmit.csv', sep = ';') %>%
             rename(rejection = reject,
                    applicant_gender = applicant.gender) %>%
             mutate(ratio = admit / applications)
-dat <- compose_data(UCBadmit)
+stan_data <- compose_data(UCBadmit)
 
-modA <- '
+stan_program_A <- '
 data {
   int n;
   int n_dept;
@@ -242,7 +227,7 @@ model {
 }
 '
 
-modB <- '
+stan_program_B <- '
 data {
   int n;
   int n_dept;
@@ -270,14 +255,13 @@ model {
 }
 '
 
-modA <- stan(model_code = modA, data = dat)
-modB <- stan(model_code = modB, data = dat)
+m11.7 <- stan(model_code = stan_program_A, data = stan_data)
+m11.8 <- stan(model_code = stan_program_B, data = stan_data)
 
 tabA <- UCBadmit %>%
-        mutate(`Model A` = summary(modA, 'p')$summary[, 1])
+        mutate(`Model A` = summary(m11.7, 'p')$summary[, 1])
 tabB <- UCBadmit %>%
-        mutate(`Model B` = summary(modB, 'p')$summary[, 1])
-
+        mutate(`Model B` = summary(m11.8, 'p')$summary[, 1])
 tab <- left_join(tabA, tabB) %>%
        rename(Observed = ratio) %>% 
        pivot_longer(cols = c(6:8))
@@ -285,22 +269,18 @@ tab <- left_join(tabA, tabB) %>%
 ggplot(tab, aes(applicant_gender, value, color = name, shape = applicant_gender), alpha = .8) +
     geom_point(size = 4) +
     facet_grid(. ~ dept) +
-    labs(x = '',
-         y = 'Probability of admission',
-         color = '',
-         shape = '')
-
+    labs(x = '', y = 'Probability of admission', color = '', shape = '')
 ```
 
-# Section 11.2
+# Section 11.2: Poisson regression
 
 ```{r, fig.asp = .5}
 
 kline <- read.csv('data/kline.csv', sep = ';') %>%
          mutate(P = as.vector(scale(log(population))))
-dat <- compose_data(kline)
+stan_data <- compose_data(kline)
 
-model <- '
+stan_program <- '
 data {
   int n;
   int total_tools[n];
@@ -317,9 +297,9 @@ model {
   total_tools ~ poisson(lambda);
 }
 '
-m11.9 <- stan(model_code = model, data = dat)
+m11.9 <- stan(model_code = stan_program, data = stan_data)
 
-model <- '
+stan_program <- '
 data {
   int n;
   int n_contact;
@@ -350,13 +330,13 @@ generated quantities {
   }
 }
 '
-dat$Pnew <- seq(min(dat$P), max(dat$P), length.out = 100)
-m11.10 <- stan(model_code = model, data = dat, iter = 10000)
+stan_data$Pnew <- seq(min(stan_data$P), max(stan_data$P), length.out = 100)
+m11.10 <- stan(model_code = stan_program, data = stan_data)
 
 datplot <- m11.10 %>%
            gather_draws(yhat[idx, contact]) %>%
            median_qi() %>%
-           left_join(tibble(idx = 1:100, 'Population' = dat$Pnew), by = 'idx') %>%
+           left_join(tibble(idx = 1:100, 'Population' = stan_data$Pnew), by = 'idx') %>%
            mutate(contact = ifelse(contact == 1, 'Low', 'High')) %>%
            rename(Tools = .value)
 
@@ -364,12 +344,10 @@ ggplot(datplot, aes(Population, Tools, linetype = contact, ymax = .upper, ymin =
     geom_ribbon(alpha = .2) +
     geom_line() +
     xlab('log population (std)')
-
 ```
 
-```{r}
-
-model <- '
+```{r, warning=FALSE, message=FALSE, results=FALSE}
+stan_program <- '
 data {
   int n;
   int n_contact;
@@ -394,15 +372,16 @@ model {
 }
 '
 
-m11.11 <- stan(model_code = model, data = dat, iter = 10000)
-
-m11.11
-
+m11.11 <- stan(model_code = stan_program, data = stan_data)
 ```
 
-# Section 11.2.2
+```{r}
+m11.11
+```
 
-```{r, fig.asp = .4}
+#### Section 11.2.2
+
+```{r, fig.asp = .4, warning=FALSE, message=FALSE, results=FALSE}
 
 old <- data.frame('monastery' = 0,
                   'exposure' = 1,
@@ -412,9 +391,9 @@ new <- data.frame('monastery' = 1,
                   'y' = rpois(4, 0.5 * 7))
 monasteries <- rbind(old, new) %>%
                mutate(log_days = log(exposure))
-dat <- compose_data(monasteries)
+stan_data <- compose_data(monasteries)
 
-model <- '
+stan_program <- '
 data {
   int<lower=1> n;
   real<lower=0> log_days[n];
@@ -442,19 +421,21 @@ generated quantities {
 }
 '
 
-m11.12 <- stan(model_code = model, data = dat)
+m11.12 <- stan(model_code = stan_program, data = stan_data)
 
-m11.12 %>% gather_draws(Old, New) %>%
-           ggplot(aes(.value, .variable)) +
-           stat_halfeye() +
-           labs(x = 'Posterior distribution of monastic productivity', y = '')
+datplot <- m11.12 %>% 
+           gather_draws(Old, New)
 
+ggplot(datplot, aes(.value, .variable)) + 
+    stat_halfeye() +
+    labs(x = 'Posterior distribution of monastic productivity', y = '')
 ```
 
-# Section 11.3
+# Section 11.3: Multinomial and categorical models
 
-```{r}
+My results differ from the book, but the `ulam` replication code also seems to produce the same results as me.
 
+```{r, warning=FALSE, message=FALSE, results=FALSE}
 # simulate career choices among 500 individuals
 N <- 500             # number of individuals
 income <- c(1,2,5)   # expected income of each career
@@ -470,9 +451,9 @@ career <- rep(NA,N)  # empty vector of choices for each individual
 # sample chosen career for each individual
 set.seed(34302)
 for ( i in 1:N ) career[i] <- sample( 1:3 , size=1 , prob=p )
-dat_list <- list( N=N , K=3 , career=career , career_income=income )
+stan_data <- list( N=N , K=3 , career=career , career_income=income )
 
-model <- "
+stan_program <- "
 data{
     int N; // number of individuals
     int K; // number of possible careers
@@ -496,12 +477,15 @@ model{
 }
 "
 
-m11.13 <- stan( model_code=model , data=dat_list , chains=4 )
-
+m11.13 <- stan(model_code = stan_program, data = stan_data, 
+               control = list(adapt_delta = .95))
 ```
 
 ```{r}
+m11.13
+```
 
+```{r, warning=FALSE, message=FALSE, results=FALSE}
 ## R code 11.59
 N <- 500
 # simulate family incomes for each individual
@@ -514,9 +498,9 @@ for ( i in 1:N ) {
     p <- softmax(score[1],score[2],score[3])
     career[i] <- sample( 1:3 , size=1 , prob=p )
 }
-dat <- list( N=N , K=3 , career=career , family_income=family_income )
+stan_data <- list( N=N , K=3 , career=career , family_income=family_income )
 
-model <- "
+stan_program <- "
 data{
     int N; // number of observations
     int K; // number of outcome values
@@ -541,22 +525,22 @@ model{
 }
 "
 
-m11.14 <- stan( model_code=model , data=dat)
-m11.14
-
+m11.14 <- stan(model_code = stan_program, data = stan_data)
 ```
 
-# Section 1.3.3
-
 ```{r}
+m11.14
+```
 
+#### Section 11.3.3
+
+```{r, warning=FALSE, message=FALSE, results=FALSE}
 UCBadmit <- read.csv('data/UCBadmit.csv', sep = ';') %>%
             rename(rejection = reject) %>%
             janitor::clean_names() %>%
             mutate(ratio = admit / applications)
-dat <- compose_data(UCBadmit)
-
-model <- '
+stan_data <- compose_data(UCBadmit)
+stan_program <- '
 data {
   int n;
   int admit[n];
@@ -575,9 +559,9 @@ model {
   }
 }
 '
-m_binomial <- stan(model_code = model, data = dat)
+m_binomial <- stan(model_code = stan_program, data = stan_data)
 
-model <- '
+stan_program <- '
 data {
   int n;
   int admit[n];
@@ -599,9 +583,10 @@ generated quantities {
   p = exp(a[1]) / (exp(a[1]) + exp(a[2]));
 }
 '
-m_poisson <- stan(model_code = model, data = dat)
+m_poisson <- stan(model_code = stan_program, data = stan_data)
+```
 
+```{r}
 m_binomial
 m_poisson
-
 ```

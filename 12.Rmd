@@ -4,14 +4,36 @@ author: Vincent Arel-Bundock
 output: html_document
 ---
 
-```{r, message=FALSE}
-# load libraries and helper functions
-source('helper.R')
+# TODO
+
+* m12.2
+* m12.3
+* m12.3_alt
+* m12.4
+* m12.4q
+* m12.5
+* m12.6
+
+```{r, include=FALSE}
+# set default graphics theme if Vincent's personal package is installed
+if (requireNamespace('vincent', quietly = TRUE)) {
+        vincent::theming()
+}
 ```
 
-# Section 12.1.1
+```{r, results=FALSE, message=FALSE}
+library(tidyverse)
+library(tidybayes)
+library(rstan)
+library(patchwork)
+options(mc.cores = 4)
+```
 
-Warning: The results of this model seem highly dependent on the random seed. This won't replicate the book results exactly.
+# Section 12.1: Over-dispersed counts
+
+#### Warning
+
+The results of this model seem highly dependent on the random seed. This won't replicate the book results exactly.
 
 ```{r, message=FALSE, results=FALSE}
 stan_program <- '
@@ -47,29 +69,37 @@ generated quantities {
 
 stan_data <- read.csv('data/UCBadmit.csv', sep = ';') %>%
              rename(gender = applicant.gender) %>%
-             prepare_data
+             compose_data
 
-m12.1 <- cmdstan_model(write_stan_tempfile(stan_program))
-m12.1 <- m12.1$sample(stan_data)
+m12.1 <- stan(model_code = stan_program, data = stan_data, iter = 5000)
 ```
 
 ```{r}
-m12.1$summary(c('a', 'theta'))
+summary(m12.1, c('a', 'phi'))$summary
 ```
 
 ```{r}
-#df <- m12.1$draws(c('a[1]', 'theta')) %>% 
-#      as_draws_df %>% 
-#      sample_n(10)
-    
-#ggplot(data.frame(x = 0:1), aes(x)) +
-#    geom_function(fun = function(x) rethinking::dbeta2(x, -0.4397136, 3.0483273))
-```
+datplot <- m12.1 %>%
+           spread_draws(a[i], theta) %>%
+		   filter(i == 2) %>%
+		   sample_n(1000) 
 
+plot(NULL, xlim = c(0, 1), ylim = c(0, 4),
+	 xlab = 'Probability admit', ylab = 'Density')
+for (i in 1:nrow(datplot)) {
+    a <- 1 / (1 + exp(-datplot$a[i]))
+    b <- datplot$theta[1]
+    curve(rethinking::dbeta2(x, a, b), add = TRUE,
+          col = adjustcolor('grey', alpha = .1))
+}
+a <- 1 / (1 + exp(-mean(datplot$a)))
+b <- mean(datplot$theta)
+curve(rethinking::dbeta2(x, a, b), add = TRUE)
+```
 
 # Section 12.4: Ordered categorical predictors
 
-```{r}
+```{r, warning=FALSE, message=FALSE, results=FALSE}
 stan_program <- '
 data{
     int n;
@@ -118,16 +148,11 @@ stan_data <- read.csv('data/Trolley.csv', sep = ';') %>%
                                                      "Bachelor's Degree",
                                                      "Master's Degree",
                                                      "Graduate Degree"))) %>%
-            prepare_data
-stan_data$alpha <- rep(2, 7)
+            compose_data(alpha = rep(2, 7))
 
-m12.6 <- write_stan_tempfile(stan_program) # write to file
-m12.6 <- cmdstan_model(m12.6)              # compile
-m12.6 <- m12.6$sample(stan_data)           # fit
+m12.6 <- stan(model_code = stan_program, data = stan_data)
 ```
 
-
-
 ```{r}
-m12.6$summary(c('bE', 'bC', 'bI', 'bA', 'delta'))
+summary(m12.6, c('bE', 'bC', 'bI', 'bA', 'delta'))$summary
 ```
