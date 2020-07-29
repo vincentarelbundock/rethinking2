@@ -3,20 +3,24 @@ title: "Statistical Rethinking 2: Chapter 5"
 author: Vincent Arel-Bundock
 ---
 
-```{r, message=FALSE}
-source('helper.R')
+```{r, include=FALSE}
+# set default graphics theme if Vincent's personal package is installed
+if (requireNamespace('vincent', quietly = TRUE)) {
+            vincent::theming()
+}
 ```
 
-# Section 5.1
-
-```{r}
-standardize <- function(x) as.vector(scale(x))
-stan_data <- read.csv('../rethinking/data/WaffleDivorce.csv', sep = ';') %>%
-             mutate(across(c(Divorce, Marriage, MedianAgeMarriage), standardize)) %>%
-             compose_data
+```{r, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(tidybayes)
+library(rstan)
+library(patchwork)
+options(mc.cores = 4)
 ```
 
-#### Plausible regression lines implied by the priors
+# Section 5.1: Spurious association
+
+Plausible regression lines implied by the priors:
 
 We will estimate a series of regression models with a constant $\alpha$ and regression coefficients $\beta_k$, and these priors:
 
@@ -37,26 +41,24 @@ p + xlim(-3, 3) + ylim(-3, 3) +
          y = 'Divorce rate (std)')
 ```
 
-# Linear regression model in Stan
-
-```{r}
-model <- '
+```{r, warning=FALSE, message=FALSE}
+stan_program <- '
 data {
-  int<lower=1> N;   // number of observations
+  int<lower=1> n;   // number of observations
   int<lower=1> K;   // number of regressors (including constant)
-  vector[N] y;      // outcome
-  matrix[N, K] X;   // regressors
+  vector[n] Divorce;      // outcome
+  matrix[n, K] X;   // regressors
 }
 parameters {
   real<lower=0,upper=50> sigma;    // scale
   vector[K] b;                     // coefficients (including constant)
 }
 transformed parameters {
-  vector[N] mu;                    // location
+  vector[n] mu;                    // location
   mu = X * b;
 }
 model {
-  y ~ normal(mu, sigma);    // probability model
+  Divorce ~ normal(mu, sigma);    // probability model
   sigma ~ exponential(1);   // prior for scale
   b[1] ~ normal(0, 0.2);    // prior for intercept
   for (i in 2:K) {          // priors for coefficients
@@ -64,132 +66,239 @@ model {
   }
 }
 generated quantities {
-  vector[N] yhat;           // predicted outcome
-  for (i in 1:N) yhat[i] = normal_rng(mu[i], sigma);
+  vector[n] yhat;           // predicted outcome
+  for (i in 1:n) yhat[i] = normal_rng(mu[i], sigma);
 }
 '
 
-mod1 <- fit_model(stan_program, stan_data)
+standardize <- function(x) as.vector(scale(x))
+WaffleDivorce <- read.csv('data/WaffleDivorce.csv', sep = ';') %>%
+                 mutate(across(c(Divorce, Marriage, MedianAgeMarriage), standardize))
+ 
+stan_data <- WaffleDivorce %>%
+             compose_data(K = 2, 
+                          y = Divorce,
+                          X = model.matrix(~MedianAgeMarriage, .)) 
+m5.1 <- stan(model_code = stan_program, data = stan_data)
+
+stan_data <- WaffleDivorce %>%
+             compose_data(K = 2, 
+                          y = Divorce,
+                          X = model.matrix(~Marriage, .)) 
+m5.2 <- stan(model_code = stan_program, data = stan_data)
+
+stan_data <- WaffleDivorce %>%
+             compose_data(K = 3, 
+                          y = Divorce,
+                          X = model.matrix(~MedianAgeMarriage + Marriage, .)) 
+m5.3 <- stan(model_code = stan_program, data = stan_data)
 ```
 
-#### Regression lines implied by the posterior
+```{r, fig.asp=.3}
+res5.1 <- m5.1 %>%
+          spread_draws(b[i]) %>%
+          mean_qi %>%
+          mutate(i = c('Intercept', 'bA'),
+                 Model = 'm5.1')
+res5.2 <- m5.2 %>%
+          spread_draws(b[i]) %>%
+          mean_qi %>%
+          mutate(i = c('Intercept', 'bM'),
+                 Model = 'm5.2')
+res5.3 <- m5.3 %>%
+          spread_draws(b[i]) %>%
+          mean_qi %>%
+          mutate(i = c('Intercept', 'bA', 'bM'),
+                 Model = 'm5.3')
+res <- bind_rows(res5.1, res5.2, res5.3) %>%
+       filter(i != 'Intercept')
+
+ggplot(res, aes(x = b, y = Model, xmin = .lower, xmax = .upper)) +
+    geom_vline(xintercept = 0, linetype = 'dotted') +
+    geom_pointrange() +
+    facet_grid(i ~ .) + 
+    vincent::theme_vab()
+```
+
+#### Figure 5.5
 
 ```{r}
-datplot <- extract(mod1, 'b')
-idx <- sample(1:nrow(datplot$b), 1000)
+datplot <- m5.3 %>%
+           gather_draws(mu[i]) %>% 
+           mean_qi %>%
+           rename(Predicted = .value)
+datplot$Observed <- WaffleDivorce$Divorce
 
-p <- ggplot()
-for (i in idx) {
-    intercept <- datplot$b[i, 1]
-    slope <- datplot$b[i, 2]
-    p <- p + geom_abline(intercept = intercept, slope = slope, alpha = .02)
-}
-p + xlim(-3, 3) +
-    ylim(-3, 3) +
-    labs(x = 'Median age marriage (std)',
-         y = 'Divorce rate (std)')
+ggplot(datplot, aes(Observed, Predicted,
+                    ymin = .lower, ymax = .upper)) +
+    geom_pointrange() +
+    geom_abline(intercept = 0, slope = 1, linetype = 'dashed') +
+    labs(x = 'Observed divorce', y = 'Predicted divorce',
+         title = 'Posterior predictive plot') +
+    coord_fixed()
 ```
 
-# Alternative models
+# Section 5.2: Masked relationship
 
-```{r}
-dat2 <- prepare_data(Divorce ~ Marriage, dat)
-dat3 <- prepare_data(Divorce ~ Marriage + MedianAgeMarriage, dat)
+```{r, warning = FALSE, message = FALSE}
+dat <- read.csv('data/milk.csv', sep = ';') %>%
+       mutate(K = standardize(kcal.per.g),
+              N = standardize(neocortex.perc),
+              M = standardize(log(mass))) %>%
+       select(K, N, M) %>%
+       drop_na
+stan_data <- dat %>% compose_data
 
-mod2 <- stan(model_code = model, data = dat2)
-mod3 <- stan(model_code = model, data = dat3)
-
-print(mod1, c('b', 'sigma'))
-print(mod2, c('b', 'sigma'))
-print(mod3, c('b', 'sigma'))
-```
-
-# Posterior predictive check (Figure 5.5)
-
-```{r, warning=FALSE}
-posterior <- extract(mod3, 'mu')$mu
-datplot <- dat %>%
-           mutate(`Predicted divorce` = colMeans(posterior),
-                  lb = apply(posterior, 2, quantile, probs = .025),
-                  ub = apply(posterior, 2, quantile, probs = .975),
-                  label = dat$Loc)
-
-ggplot(datplot, aes(Divorce, `Predicted divorce`, ymin = lb, ymax = ub, label = label)) +
-  geom_abline(intercept = 0, slope = 1, linetype = 'dashed') +
-  geom_linerange(alpha = .3) +
-  geom_text() +
-  xlim(-2.5, 2.5) + ylim(-2.5, 2.5)
-```
-
-# Section 5.3
-
-## Height (R code 5.48)
-
-```{r, message=FALSE}
-dat <- read.csv('../rethinking/data/Howell1.csv', sep = ';') %>%
-       mutate(sex = ifelse(male == 1, 2, 1)) %>%
-       list('height' = .$height, 'sex' = .$sex, 'N' = nrow(.), weight = .$weight)
-
-model <- '
+# m5.5
+stan_program <- '
 data {
-  int<lower=1> N;        // number of observations
-  vector[N] height;      // outcome
-  int sex[N];            // regressor
+    int n;
+    vector[n] K;
+    vector[n] N;
 }
 parameters {
-  real<lower=0,upper=50> sigma;    // scale
+    real a;
+    real<lower=0> sigma;
+    real bN;
+}
+model {
+    vector[n] mu;
+    mu = a + bN * N;
+    K ~ normal(mu, sigma);
+    a ~ normal(0, .2);
+    bN ~ normal(0, 0.5);
+    sigma ~ exponential(1);
+}
+'
+
+m5.5 <- stan(model_code = stan_program, data = stan_data)
+
+# m5.6
+stan_program <- '
+data {
+    int n;
+    vector[n] K;
+    vector[n] M;
+}
+parameters {
+    real a;
+    real<lower=0> sigma;
+    real bM;
+}
+model {
+    vector[n] mu;
+    mu = a + bM * M;
+    K ~ normal(mu, sigma);
+    a ~ normal(0, .2);
+    bM ~ normal(0, 0.5);
+    sigma ~ exponential(1);
+}
+'
+
+m5.6 <- stan(model_code = stan_program, data = stan_data)
+
+# m5.7
+stan_program <- '
+data {
+    int n;
+    vector[n] K;
+    vector[n] N;
+    vector[n] M;
+}
+parameters {
+    real a;
+    real<lower=0> sigma;
+    real bM;
+    real bN;
+}
+model {
+    vector[n] mu;
+    mu = a + bN * N + bM * M;
+    K ~ normal(mu, sigma);
+    a ~ normal(0, .2);
+    bN ~ normal(0, 0.5);
+    bM ~ normal(0, 0.5);
+    sigma ~ exponential(1);
+}
+'
+
+m5.7 <- stan(model_code = stan_program, data = stan_data)
+```
+
+```{r}
+plot(rethinking::coeftab(m5.5, m5.6, m5.7), pars = c('bM', 'bN'))
+```
+
+# Section 5.3: Categorical variables
+
+```{r, message=FALSE, results=FALSE}
+stan_program <- '
+data {
+  int<lower=1> n;
+  vector[n] height;
+  int sex[n];
+}
+parameters {
+  real<lower=0,upper=50> sigma;
   vector[2] a;
 }
 transformed parameters {
-  vector[N] mu;                    // location
+  vector[n] mu;
   mu = a[sex];
 }
 model {
-  height ~ normal(mu, sigma);    // probability model
-  sigma ~ uniform(0, 50);        // prior: scale
-  a[1] ~ normal(178, 20);        // prior: women
-  a[2] ~ normal(178, 20);        // prior: men
+  height ~ normal(mu, sigma);
+  sigma ~ uniform(0, 50);
+  a[1] ~ normal(178, 20);
+  a[2] ~ normal(178, 20);
 }
 generated quantities{
   real diff_fm;
   diff_fm = a[1] - a[2];
 }
 '
-mod <- stan(model_code = model, data = dat)
 
-summary(mod, c('a', 'diff_fm'))$summary
+stan_data <- read.csv('data/Howell1.csv', sep = ';') %>%
+             mutate(sex = ifelse(male == 1, 'Male', 'Female')) %>%
+             compose_data
+
+m5.8 <- stan(model_code = stan_program, data = stan_data)
 ```
 
-# Milk (R code 5.52)
+```{r}
+summary(m5.8, c('diff_fm', 'sigma', 'a'))$summary
+```
 
-```{r, message=FALSE}
-dat <- read.csv('../rethinking/data/milk.csv', sep = ';') %>%
-       mutate(clade_id = as.integer(as.factor(clade)), K = as.vector(scale(kcal.per.g))) %>%
-       select(K, clade_id) %>%
-       as.list
-dat$N <- length(dat$K)
-      
-model <- '
+```{r, message=FALSE, results=FALSE}
+stan_program <- '
 data {
-  int<lower=1> N;        // number of observations
-  vector[N] K;           // outcome
-  int clade_id[N];
+  int n;
+  vector[n] K;
+  int clade[n];
 }
 parameters {
-  real<lower=0,upper=50> sigma;    // scale
+  real<lower=0,upper=50> sigma;
   vector[4] a;
 }
 transformed parameters {
-  vector[N] mu;                    // location
-  mu = a[clade_id];
+  vector[n] mu;
+  mu = a[clade];
 }
 model {
-  K ~ normal(mu, sigma);         // probability model
-  sigma ~ uniform(0, 50);        // prior: scale
-  for (i in 1:4) a[i] ~ normal(0, 0.5);
+  K ~ normal(mu, sigma);
+  sigma ~ uniform(0, 50);
+  a ~ normal(0, .5);
 }
 '
-mod <- stan(model_code = model, data = dat)
 
-summary(mod, 'a')$summary
+stan_data <- read.csv('data/milk.csv', sep = ';') %>%
+             mutate(K = as.vector(scale(kcal.per.g))) %>%
+             select(K, clade) %>%
+             compose_data
+
+m5.9 <- stan(model_code = stan_program, data = stan_data)
+```
+
+```{r}
+summary(m5.9, 'a')$summary
 ```
