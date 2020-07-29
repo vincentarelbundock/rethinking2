@@ -1,12 +1,107 @@
 ---
-title: "Statistical Rethinking 2 Chapter 13"
+title: "Statistical Rethinking 2: Chapter 13"
 author: Vincent Arel-Bundock
 output: html_document
 ---
 
-```{r, message=FALSE}
-source('helper.R')
+# TODO
+
+* m14.1
+* m14.2
+* m14.3
+
+```{r, include=FALSE}
+# set default graphics theme if Vincent's personal package is installed
+if (requireNamespace('vincent', quietly = TRUE)) {
+        vincent::theming()
+}
 ```
+
+```{r, results=FALSE, message=FALSE}
+library(tidyverse)
+library(tidybayes)
+library(rstan)
+library(patchwork)
+options(mc.cores = 4)
+```
+
+# Section 14.1: Varying slopes by construction
+
+```{r, warning=FALSE, message=FALSE, results=FALSE}
+
+# Simulation code from McElreath's replication files
+library(MASS)
+a <- 3.5            # average morning wait time
+b <- (-1)           # average difference afternoon wait time
+sigma_a <- 1        # std dev in intercepts
+sigma_b <- 0.5      # std dev in slopes
+rho <- (-0.7)       # correlation between intercepts and slopes
+Mu <- c( a , b )
+cov_ab <- sigma_a*sigma_b*rho
+Sigma <- matrix( c(sigma_a^2,cov_ab,cov_ab,sigma_b^2) , ncol=2 )
+sigmas <- c(sigma_a,sigma_b) # standard deviations
+Rho <- matrix( c(1,rho,rho,1) , nrow=2 ) # correlation matrix
+Sigma <- diag(sigmas) %*% Rho %*% diag(sigmas)
+N_cafes <- 20
+set.seed(5) # used to replicate example
+vary_effects <- mvrnorm( N_cafes , Mu , Sigma )
+a_cafe <- vary_effects[,1]
+b_cafe <- vary_effects[,2]
+set.seed(22)
+N_visits <- 10
+afternoon <- rep(0:1,N_visits*N_cafes/2)
+cafe_id <- rep( 1:N_cafes , each=N_visits )
+mu <- a_cafe[cafe_id] + b_cafe[cafe_id]*afternoon
+sigma <- 0.5  # std dev within cafes
+wait <- rnorm( N_visits*N_cafes , mu , sigma )
+d <- data.frame( cafe=cafe_id , afternoon=afternoon , wait=wait )
+R <- rlkjcorr( 1e4 , K=2 , eta=2 )
+
+stan_data <- compose_data(d,
+ 		                  n_cafe = n_distinct(cafe))
+
+stan_program <- "
+data {
+  int n;
+  int n_cafe;
+  int cafe[n];
+  vector[n] afternoon;
+  vector[n] wait;
+}
+parameters {
+  vector[n_cafe] a_cafe;
+  vector[n_cafe] b_cafe;
+  real a;
+  real b;
+  vector<lower=0>[2] sigma_cafe;
+  real<lower=0> sigma;
+  corr_matrix[2] Rho;
+}
+model {
+  vector[n] mu;
+  vector[2] YY[n_cafe];
+  vector[2] MU;
+  Rho ~ lkj_corr(2);
+  sigma ~ exponential(1);
+  sigma_cafe ~ exponential(1);
+  a ~ normal(5, 2);
+  b ~ normal(-1, .5);
+  MU = [a, b]';
+  for (j in 1:n_cafe) {
+    YY[j] = [a_cafe[j], b_cafe[j]]';
+  }
+  YY ~ multi_normal(MU, quad_form_diag(Rho, sigma_cafe));
+  mu = a_cafe[cafe] + b_cafe[cafe] .* afternoon;
+  wait ~ normal(mu, sigma);
+}
+"
+
+m14.1 <- stan(model_code = stan_program, data = stan_data)
+```
+
+
+
+# Section 14.2: Advanced varying slopes
 
 # Section 14:3: Instruments and causal designs
 

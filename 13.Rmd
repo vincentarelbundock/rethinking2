@@ -4,13 +4,19 @@ author: Vincent Arel-Bundock
 output: html_document
 ---
 
-```{r, message=FALSE}
+```{r, include=FALSE}
+# set default graphics theme if Vincent's personal package is installed
+if (requireNamespace('vincent', quietly = TRUE)) {
+        vincent::theming()
+}
+```
+
+```{r, results=FALSE, message=FALSE}
 library(tidyverse)
-library(cmdstanr)
-library(posterior)
-library(rethinking)
-ncores <- 4
-vincent::theming()
+library(tidybayes)
+library(rstan)
+library(patchwork)
+options(mc.cores = 4)
 ```
 
 # Section 13:1: Multilevel tadpoles
@@ -45,12 +51,9 @@ model {
     }
 }
 '
-f <- write_stan_tempfile(stan_program)
-mod <- cmdstan_model(f)
-m13.1 <- mod$sample(stan_data, parallel_chains = ncores)
-```
 
-```{r, results=FALSE, message=FALSE}
+m13.1 <- stan(model_code = stan_program, data = stan_data)
+
 stan_program <- '
 data {
     int n;
@@ -77,9 +80,8 @@ model {
     }
 }
 '
-f <- write_stan_tempfile(stan_program)
-mod <- cmdstan_model(f)
-m13.2 <- mod$sample(stan_data, parallel_chains = ncores)
+
+m13.2 <- stan(model_code = stan_program, data = stan_data)
 ```
 
 ```{r, out.width = '100%', fig.asp = .5}
@@ -87,8 +89,8 @@ m13.2 <- mod$sample(stan_data, parallel_chains = ncores)
 datplot <- tibble(Tank = 1:nrow(dat),
                   Density = dat$density,
                   'Observed' = dat$propsurv,
-                  `No pooling` = m13.1$summary('p')$mean,
-                  `Partial pooling` = m13.2$summary('p')$mean) %>%
+                  `No pooling` = summary(m13.1, 'p')$summary[, 1],
+                  `Partial pooling` = summary(m13.2, 'p')$summary[, 1]) %>%
            mutate(Size = case_when(Density == 10 ~ 'Small',
                                    Density == 25 ~ 'Medium',
                                    Density == 35 ~ 'Large'),
@@ -96,20 +98,22 @@ datplot <- tibble(Tank = 1:nrow(dat),
            pivot_longer(-c(Tank, Size, Density))
 
 ggplot(datplot, aes(Tank, value, color = name)) +
-    geom_point() +
+    geom_point(size = 2) +
     facet_grid(. ~ Size, scales = 'free_x') +
     ylab('Survival proportion')
 ```
 
 ```{r, out.width='100%', fig.asp = .6}
-post <- m13.2$draws(c('abar', 'sigma')) %>%
-           as_draws_df
+
+post <- m13.2 %>%
+        spread_draws(abar, sigma)
+datplot <- post %>%
+		   sample_n(1000)
 
 # side-by-side plots
 par(mfrow = c(1, 2))
 
 # log odds plot for 1000 samples
-datplot <- post %>% sample_n(1000)
 plot(NULL, xlim = c(-3, 4), ylim = c(0, .35),
      xlab = 'Log-odds survive', ylab = 'Density')
 for (i in 1:nrow(datplot)) {
@@ -119,14 +123,13 @@ for (i in 1:nrow(datplot)) {
 
 # density plot
 sim_tanks <- rnorm(1:nrow(post), post$abar, post$sigma)
-sim_tanks <- inv_logit(sim_tanks)
-dens(sim_tanks, lwd = 2, adj = .1, xlab = 'Probability survive')
+sim_tanks <- density(rethinking::inv_logit(sim_tanks))
+plot(sim_tanks, lwd = 2, adj = .1, xlab = 'Probability survive', main = '')
 ```
 
 # Section 13.3: More than one type of cluster
 
-```{r, results=FALSE, message=FALSE}
-
+```{r, results=FALSE, message=FALSE, warning=FALSE}
 dat <- read.csv('data/chimpanzees.csv', sep = ';')
 stan_data <- list(actor = dat$actor,
                   treatment = as.integer(1 + dat$prosoc_left + 2 * dat$condition),
@@ -171,13 +174,14 @@ model {
 }
 '
 
-f <- write_stan_tempfile(stan_program)
-mod <- cmdstan_model(f)
-m13.4 <- mod$sample(stan_data)
+m13.4 <- stan(model_code = stan_program, data = stan_data)
 ```
 
+```{r}
+summary(m13.4, c('a_bar', 'sigma_a', 'sigma_g'))$summary
+```
 
-```{r, results=FALSE, message=FALSE}
+```{r, results=FALSE, message=FALSE, warning=FALSE}
 stan_program <- '
 data {
     int n;
@@ -211,12 +215,14 @@ model {
 }
 '
 
-f <- write_stan_tempfile(stan_program)
-mod <- cmdstan_model(f)
-m13.5 <- mod$sample(stan_data, parallel_chains = ncores)
+m13.5 <- stan(model_code = stan_program, data = stan_data)
 ```
 
-```{r, results=FALSE, message=FALSE}
+```{r}
+summary(m13.5, c('a_bar', 'sigma_a', 'sigma_g', 'g', 'b'))$summary
+```
+
+```{r, results=FALSE, message=FALSE, warning = FALSE}
 stan_program <- '
 data {
     int n;
@@ -252,14 +258,16 @@ model {
 }
 '
 
-f <- write_stan_tempfile(stan_program)
-mod <- cmdstan_model(f)
-m13.6 <- mod$sample(stan_data, parallel_chains = ncores)
+m13.6 <- stan(model_code = stan_program, data = stan_data)
+```
+
+```{r}
+summary(m13.6, c('a_bar', 'sigma_a', 'sigma_g', 'sigma_b', 'g', 'b'))$summary
 ```
 
 # Section 13: Divergent transitions and non-centered priors
 
-```{r, results=FALSE, message=FALSE}
+```{r, results=FALSE, message=FALSE, warning=FALSE}
 stan_program <- '
 data {
   int n;
@@ -274,16 +282,13 @@ model {
 }
 '
 stan_data <- list(n = 1)
-f <- write_stan_tempfile(stan_program)
-mod <- cmdstan_model(f)
-
-m13.7 <- mod$sample(stan_data, parallel_chains = ncores)
+m13.7 <- stan(model_code = stan_program, data = stan_data)
 ```
 ```{r}
-m13.7$summary()
+m13.7
 ```
 
-```{r, results=FALSE, message=FALSE}
+```{r, results=FALSE, message=FALSE, warning=FALSE}
 stan_program <- '
 data {
   int n;
@@ -302,14 +307,11 @@ generated quantities {
 }
 '
 
-stan_data <- list(n = 1)
-f <- write_stan_tempfile(stan_program)
-mod <- cmdstan_model(f)
-m13.7nc <- mod$sample(stan_data, parallel_chains = ncores)
+m13.7nc <- stan(model_code = stan_program, data = stan_data)
 ```
 
 ```{r}
-m13.7nc$summary()
+m13.7nc
 ```
 
 ```{r, results=FALSE, message=FALSE}
@@ -365,10 +367,11 @@ stan_data <- list(actor = dat$actor,
 stan_data$n_treatment <- length(unique(stan_data$treatment))
 
 
-f <- write_stan_tempfile(stan_program)
-mod <- cmdstan_model(f)
+m13.4nc <- stan(model_code = stan_program, data = stan_data)
+```
 
-m13.4nc <- mod$sample(stan_data, parallel_chains = ncores)
+```{r}
+summary(m13.4nc, c('b', 'abar', 'sigma_a', 'sigma_g'))$summary
 ```
 
 

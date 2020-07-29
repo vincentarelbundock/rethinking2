@@ -1,4 +1,4 @@
-all: index.html 04.html 05.html 06.html 07.html 08.html 09.html 11.html
+all: index.html 04.html 05.html 06.html 07.html 08.html 09.html 11.html 12.html 13.html
 
 index.html: README.md Makefile style.css
 	pandoc -s -c style.css README.md -o index.html
@@ -23,3 +23,9 @@ index.html: README.md Makefile style.css
 
 11.html: 11.Rmd
 	render 11.Rmd
+
+12.html: 12.Rmd
+	render 12.Rmd
+
+13.html: 13.Rmd
+	render 13.Rmd
