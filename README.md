@@ -14,6 +14,7 @@ Rendered `Rmarkdown` notebooks can be viewed here:
 * [Chapter 12](https://vincentarelbundock.github.io/rethinking2/12.html)
 * [Chapter 13](https://vincentarelbundock.github.io/rethinking2/13.html)
 * [Chapter 14](https://vincentarelbundock.github.io/rethinking2/14.html)
+* [Chapter 15](https://vincentarelbundock.github.io/rethinking2/15.html)
 
 All data and code can be downloaded from Github: [https://github.com/vincentarelbundock/rethinking2](https://github.com/vincentarelbundock/rethinking2)
 
