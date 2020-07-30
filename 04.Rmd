@@ -5,6 +5,10 @@ author: Vincent Arel-Bundock
 output: html_document
 ---
 
+# Status
+
+* All models (m4.1 to m4.7) replicated and checked against the originals.
+
 ```{r, include=FALSE}
 # set default graphics theme if Vincent's personal package is installed
 if (requireNamespace('vincent', quietly = TRUE)) {

@@ -3,6 +3,11 @@ title: "Statistical Rethinking 2: Chapter 5"
 author: Vincent Arel-Bundock
 ---
 
+# Status
+
+* TODO: m5.4
+* All other models are replicated and checked against the book. There are small numerical difference, probably due to the difference between `quap` and `Stan`.
+
 ```{r, include=FALSE}
 # set default graphics theme if Vincent's personal package is installed
 if (requireNamespace('vincent', quietly = TRUE)) {
