@@ -10,16 +10,13 @@ Estimated and checked against the book:
 
 * m13.1
 * m13.2
+* m13.3
 * m13.4
 * m13.5
 * m13.6
 * m13.7
 * m13.7nc
 * m13.4nc
-
-TODO:
-
-* m13.3
 
 # Librairies
 
@@ -34,6 +31,7 @@ if (requireNamespace('vincent', quietly = TRUE)) {
 library(tidyverse)
 library(tidybayes)
 library(rstan)
+library(rethinking)
 library(patchwork)
 options(mc.cores = 4)
 ```
@@ -144,6 +142,58 @@ for (i in 1:nrow(datplot)) {
 sim_tanks <- rnorm(1:nrow(post), post$abar, post$sigma)
 sim_tanks <- density(rethinking::inv_logit(sim_tanks))
 plot(sim_tanks, lwd = 2, adj = .1, xlab = 'Probability survive', main = '')
+```
+
+Results are different because of different random seeds. This model replicates the same results produced by the book's replication code:
+
+```{r, warning=FALSE, message=FALSE, results=FALSE}
+set.seed(5005)
+a_bar <- 1.5
+sigma <- 1.5
+nponds <- 60
+Ni <- as.integer(rep(c(5, 10, 25, 35), each = 15))
+a_pond <- rnorm(nponds, mean = a_bar, sd = sigma)
+dsim <- data.frame(pond = 1:nponds,
+                   Ni = Ni,
+                   true_a = a_pond)
+dsim$Si <- rbinom(nponds, prob = logistic(dsim$true_a), size = dsim$Ni)
+dsim$p_nopool <- dsim$Si / dsim$Ni
+stan_data <- compose_data(dsim)
+stan_data$n_pond <- n_distinct(stan_data$pond)
+
+stan_program <- "
+data {
+    int n;
+    int n_pond;
+    int Si[n];
+    int Ni[n];
+    int pond[n];
+}
+parameters {
+    real a_pond[n_pond];
+    real a_bar;
+    real<lower=0> sigma;
+}
+model {
+    vector[n] p;
+    for (i in 1:n) {
+        p[i] = inv_logit(a_pond[pond[i]]);
+    }
+    Si ~ binomial(Ni, p);
+    a_pond ~ normal(a_bar, sigma);
+    a_bar ~ normal(0, 1.5);
+    sigma ~ exponential(1);
+}
+"
+
+m13.3 <- stan(model_code = stan_program, data = stan_data)
+```
+
+```{r}
+summary(m13.3, c('a_bar', 'sigma'))$summary
+```
+
+
 ```
 
 # Section 13.3: More than one type of cluster
