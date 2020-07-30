@@ -1,8 +1,20 @@
 ---
-title: "Statistical Rethinking 2 Chapter 8"
+title: "Statistical Rethinking 2: Chapter 8"
 author: Vincent Arel-Bundock
 output: html_document
 ---
+
+# Status
+
+Estimated and checked against the book:
+
+* m8.1
+* m8.2
+* m8.3
+* m8.4
+* m8.5
+
+# Libraries
 
 ```{r, include=FALSE}
 # set default graphics theme if Vincent's personal package is installed

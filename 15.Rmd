@@ -1,0 +1,236 @@
+---
+title: "Statistical Rethinking 2: Chapter 16"
+author: Vincent Arel-Bundock
+output: html_document
+---
+
+# Status
+
+Estimated and checked against book:
+
+* m15.1
+* m15.2
+* m15.3
+* m15.4
+
+TODO:
+
+* m15.5
+* m15.6
+* m15.7
+* m15.8
+
+# Libraries
+
+```{r, include=FALSE}
+# set default graphics theme if Vincent's personal package is installed
+if (requireNamespace('vincent', quietly = TRUE)) {
+        vincent::theming()
+}
+```
+
+```{r, results=FALSE, message=FALSE}
+library(tidyverse)
+library(tidybayes)
+library(rstan)
+library(patchwork)
+library(rethinking)
+options(mc.cores = 4)
+```
+
+# Section 15.1: Measurement error
+
+```{r, warning=FALSE, message=FALSE, results=FALSE}
+d <- read.csv('data/WaffleDivorce.csv', sep = ';')
+stan_data <- list(
+    D_obs = standardize( d$Divorce ),
+    D_sd = d$Divorce.SE / sd( d$Divorce ),
+    M = standardize( d$Marriage ),
+    A = standardize( d$MedianAgeMarriage ),
+    N = nrow(d)
+)
+
+stan_program <- "
+data {
+    int N;
+    vector[N] D_obs;
+    vector[N] D_sd;
+    vector[N] M;
+    vector[N] A;
+}
+parameters {
+    vector[N] D_true;
+    real a;
+    real bA;
+    real bM;
+    real<lower=0> sigma;
+}
+model {
+    vector[N] mu;
+    mu = a + bA * A + bM * M;
+    D_true ~ normal(mu, sigma);
+    D_obs ~ normal(D_true, D_sd);
+    a ~ normal(0, .2);
+    bA ~ normal(0, .5);
+    bM ~ normal(0, .5);
+    sigma ~ exponential(1);
+}
+"
+
+m15.1 <- stan(model_code = stan_program, data = stan_data)
+```
+
+```{r, warning=FALSE, message=FALSE, results=FALSE}
+stan_data <- list(
+    D_obs = standardize( d$Divorce ),
+    D_sd = d$Divorce.SE / sd( d$Divorce ),
+    M_obs = standardize( d$Marriage ),
+    M_sd = d$Marriage.SE / sd( d$Marriage ),
+    A = standardize( d$MedianAgeMarriage ),
+    N = nrow(d)
+)
+
+stan_program <- "
+data {
+    int N;
+    vector[N] D_obs;
+    vector[N] D_sd;
+    vector[N] M_obs;
+    vector[N] M_sd;
+    vector[N] A;
+}
+parameters {
+    vector[N] D_true;
+    real a;
+    real bA;
+    real bM;
+    real<lower=0> sigma;
+    real M_true[N];
+}
+model {
+    vector[N] mu;
+    for (i in 1:N) {
+        mu[i] = a + bA * A[i] + bM * M_true[i];
+    }
+    D_true ~ normal(mu, sigma);
+    D_obs ~ normal(D_true, D_sd);
+    M_true ~ normal(0, 1);
+    M_obs ~ normal(M_true, M_sd);
+    a ~ normal(0, .2);
+    bA ~ normal(0, .5);
+    bM ~ normal(0, .5);
+    sigma ~ exponential(1);
+}
+"
+
+m15.2 <- stan(model_code = stan_program, data = stan_data)
+```
+
+```{r}
+datpost <- m15.2 %>%
+           spread_draws(M_true[i], D_true[i]) %>%
+           mean_qi %>%
+           select(Marriage = M_true, Divorce = D_true)
+datreal <- tibble(Marriage = stan_data$M_obs, Divorce = stan_data$D_obs)
+ggplot(datpost) +
+    geom_point(aes(Marriage, Divorce), color = 'blue') +
+    geom_point(data = datreal, aes(Marriage, Divorce), color = 'black')
+```
+
+# Section 15.2: Missing data
+
+```{r, warning=FALSE, message=FALSE, results=FALSE}
+
+## R code 15.7
+N <- 500
+A <- rnorm(N)
+M <- rnorm(N,-A)
+D <- rnorm(N,A)
+A_obs <- rnorm(N,A)
+
+## R code 15.8
+N <- 100
+S <- rnorm( N )
+H <- rbinom( N , size=10 , inv_logit(S) )
+
+## R code 15.9
+D <- rbern( N ) # dogs completely random
+Hm <- H
+Hm[D==1] <- NA
+
+## R code 15.10
+D <- ifelse( S > 0 , 1 , 0 )
+Hm <- H
+Hm[D==1] <- NA
+
+set.seed(501)
+N <- 1000
+X <- rnorm(N)
+S <- rnorm(N)
+H <- rbinom( N , size=10 , inv_logit( 2 + S - 2*X ) )
+D <- ifelse( X > 1 , 1 , 0 )
+Hm <- H
+Hm[D==1] <- NA
+
+## R code 15.12
+stan_data <- list(
+    H = H,
+    S = S,
+    n = length(H))
+
+stan_program <- "
+data{
+    int n;
+    int H[n];
+    vector[n] S;
+}
+parameters {
+    real a;
+    real bS;
+}
+model {
+    vector[n] p;
+    p = a + bS * S;
+    p = inv_logit(p);
+    H ~ binomial(10, p);
+    bS ~ normal(0, .5);
+    a ~ normal(0, 1);
+}
+"
+
+m15.3 <- stan(model_code = stan_program, data = stan_data)
+```
+
+```{r}
+m15.3
+```
+
+```{r, warning=FALSE, message=FALSE, results=FALSE}
+stan_data <- list(H = H[D == 0], S = S[D == 0], n = length(H[D == 0]))
+
+stan_program <- "
+data{
+    int n;
+    int H[n];
+    vector[n] S;
+}
+parameters {
+    real a;
+    real bS;
+}
+model {
+    vector[n] p;
+    p = a + bS * S;
+    p = inv_logit(p);
+    H ~ binomial(10, p);
+    bS ~ normal(0, .5);
+    a ~ normal(0, 1);
+}
+"
+
+m15.4 <- stan(model_code = stan_program, data = stan_data)
+```
+
+```{r}
+m15.4
+```

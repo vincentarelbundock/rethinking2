@@ -4,6 +4,28 @@ author: Vincent Arel-Bundock
 output: html_document
 ---
 
+# Status
+
+Estimated and checked against the book:
+
+* m14.1
+* m14.2
+* m14.3
+* m14.4
+* m14.5
+* m14.6
+
+TODO:
+
+* m14.7
+* m14.8
+* m14.8nc
+* m14.9
+* m14.10
+* m14.11
+
+# Libraries
+
 ```{r, include=FALSE}
 # set default graphics theme if Vincent's personal package is installed
 if (requireNamespace('vincent', quietly = TRUE)) {
@@ -22,7 +44,6 @@ options(mc.cores = 4)
 # Section 14.1: Varying slopes by construction
 
 ```{r, warning=FALSE, message=FALSE, results=FALSE}
-
 # Simulation code from McElreath's replication files
 library(MASS)
 a <- 3.5            # average morning wait time
@@ -162,7 +183,6 @@ m14.2 <- stan(model_code = stan_program, data = stan_data)
 ```
 
 ```{r, warning=FALSE, message=FALSE, results=FALSE}
-
 stan_program <- "
 data {
     int n;
@@ -189,7 +209,6 @@ transformed parameters {
    beta = (diag_pre_multiply(sigma_block, L_Rho_block) * z_block)';
    alpha = (diag_pre_multiply(sigma_actor, L_Rho_actor) * z_actor)';
 }
-
 model{
     vector[n] p;
     L_Rho_block ~ lkj_corr_cholesky( 2 );
@@ -209,7 +228,6 @@ model{
 
 m14.3 <- stan(model_code = stan_program, data = stan_data)
 ```
-
 
 # Section 14:3: Instruments and causal designs
 

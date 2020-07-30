@@ -1,8 +1,27 @@
 ---
-title: "Statistical Rethinking 2 Chapter 13"
+title: "Statistical Rethinking 2: Chapter 13"
 author: Vincent Arel-Bundock
 output: html_document
 ---
+
+# Status
+
+Estimated and checked against the book:
+
+* m13.1
+* m13.2
+* m13.4
+* m13.5
+* m13.6
+* m13.7
+* m13.7nc
+* m13.4nc
+
+TODO:
+
+* m13.3
+
+# Librairies
 
 ```{r, include=FALSE}
 # set default graphics theme if Vincent's personal package is installed
@@ -21,7 +40,7 @@ options(mc.cores = 4)
 
 # Section 13:1: Multilevel tadpoles
 
-```{r, results=FALSE, message=FALSE}
+```{r, results=FALSE, message=FALSE, warning=FALSE}
 dat <- read.csv('data/reedfrogs.csv', sep = ';')
 stan_data <- list(n = nrow(dat),
                   surv = dat$surv,
@@ -307,7 +326,7 @@ generated quantities {
 }
 '
 
-m13.7nc <- stan(model_code = stan_program, data = stan_data)
+m13.7nc <- stan(model_code = stan_program, data = stan_data, iter = 5000)
 ```
 
 ```{r}

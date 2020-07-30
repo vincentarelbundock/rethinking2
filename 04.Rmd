@@ -7,7 +7,17 @@ output: html_document
 
 # Status
 
-* All models (m4.1 to m4.7) replicated and checked against the originals.
+Estimated and checked against the book:
+
+* m4.1
+* m4.2
+* m4.3
+* m4.4
+* m4.5
+* m4.6
+* m4.7
+
+# Libraries
 
 ```{r, include=FALSE}
 # set default graphics theme if Vincent's personal package is installed

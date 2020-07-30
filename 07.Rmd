@@ -1,8 +1,14 @@
 ---
-title: "Statistical Rethinking 2 Chapter 7"
+title: "Statistical Rethinking 2: Chapter 7"
 author: Vincent Arel-Bundock
 output: html_document
 ---
+
+# Status
+
+In the book, models m7.1 to m7.6 are estimated using `quap` rather than `Stan`. My estimates are similar for models m7.1 to 7.3, but diverge somewhat for the others. Also, my compatibility intervals for $\mu$ are very different. Not sure what the problem is.
+
+# Libraries
 
 ```{r, include=FALSE}
 # set default graphics theme if Vincent's personal package is installed
@@ -21,7 +27,6 @@ options(mc.cores = 4)
 
 # Section 7.1: The problem with parameters
 
-*Warning:* In the book, models m7.1 to m7.6 are estimated using `quap` rather than `Stan`. My coefficient estimates are similar for model m7.1 to 7.3, but diverge somewhat for the others. Also, my compatibility intervals for $\mu$ are quite different. Not sure what the problem is.
 
 ```{r, warning=FALSE, message=FALSE, results=FALSE, out.width='100%', fig.asp = 1.2}
 d <- tibble(sppnames = c("afarensis", "africanus", "habilis", "boisei", "rudolfensis", "ergaster", "sapiens"),

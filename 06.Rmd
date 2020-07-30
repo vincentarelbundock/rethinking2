@@ -3,6 +3,12 @@ title: "Statistical Rethinking 2: Chapter 6"
 author: Vincent Arel-Bundock
 ---
 
+# Status
+
+Models m6.1 through m6.12 estimated and checked against the originals.
+
+# Libraries
+
 ```{r, include=FALSE}
 # set default graphics theme if Vincent's personal package is installed
 if (requireNamespace('vincent', quietly = TRUE)) {

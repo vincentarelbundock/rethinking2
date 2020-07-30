@@ -1,8 +1,20 @@
 ---
-title: "Statistical Rethinking 2 Chapter 9"
+title: "Statistical Rethinking 2: Chapter 9"
 author: Vincent Arel-Bundock
 output: html_document
 ---
+
+# Status
+
+Estimated and checked against the book:
+
+* m9.1
+* m9.2
+* m9.3
+* m9.4
+* m9.5
+
+# Librairies
 
 ```{r, include=FALSE}
 # set default graphics theme if Vincent's personal package is installed
@@ -153,6 +165,10 @@ m9.4 <- stan(model_code = stan_program, data = stan_data)
 mcmc_trace(m9.4)
 ```
 
+```{r}
+m9.4
+```
+
 Weakly regularized priors:
 
 ```{r, fig.asp = .3, warning=FALSE, message=FALSE, results=FALSE}
@@ -179,4 +195,8 @@ model {
 
 m9.5 <- stan(model_code = model, data = dat, control = list(adapt_delta = 0.99), iter = 10000)
 mcmc_trace(m9.5)
+```
+
+```{r}
+m9.5
 ```

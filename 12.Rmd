@@ -1,10 +1,20 @@
 ---
-title: "Statistical Rethinking 2 Chapter 12"
+title: "Statistical Rethinking 2: Chapter 12"
 author: Vincent Arel-Bundock
 output: html_document
 ---
 
-# TODO
+# Status
+
+Estimated and checked against the book:
+
+* m12.6
+
+Different results:
+
+* m12.1: Can't replicate with book code either. Did seeds change?
+
+TODO:
 
 * m12.2
 * m12.3
@@ -13,6 +23,8 @@ output: html_document
 * m12.4q
 * m12.5
 * m12.6
+
+# Libraries
 
 ```{r, include=FALSE}
 # set default graphics theme if Vincent's personal package is installed
@@ -31,11 +43,7 @@ options(mc.cores = 4)
 
 # Section 12.1: Over-dispersed counts
 
-#### Warning
-
-The results of this model seem highly dependent on the random seed. This won't replicate the book results exactly.
-
-```{r, message=FALSE, results=FALSE}
+```{r, warning=FALSE, message=FALSE, results=FALSE}
 stan_program <- '
 data {
     int n;

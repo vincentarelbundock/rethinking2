@@ -1,8 +1,37 @@
 ---
-title: "Statistical Rethinking 2 Chapter 11"
+title: "Statistical Rethinking 2: Chapter 11"
 author: Vincent Arel-Bundock
 output: html_document
 ---
+
+# Status
+
+Estimated and checked against the book:
+
+* m11.1
+* m11.6
+* m11.7
+* m11.8
+* m11.9
+* m11.10
+* m11.12
+* m_binom
+* m_pois
+
+Different results:
+
+* m11.4
+* m11.11
+* m11.13
+* m11.14
+
+TODO:
+
+* m11.2
+* m11.3
+* m11.5
+
+# Libraries
 
 ```{r, include=FALSE}
 # set default graphics theme if Vincent's personal package is installed
@@ -18,14 +47,6 @@ library(rstan)
 library(rethinking)
 options(mc.cores = 4)
 ```
-
-# TODO
-
-* Comapre results of everything
-* m11.2
-* m11.3
-* m11.4 produces slightly different results
-* m11.5
 
 Was the `R` number generator different when the book was written? I know it changed recently.
 
@@ -270,6 +291,11 @@ ggplot(tab, aes(applicant_gender, value, color = name, shape = applicant_gender)
     geom_point(size = 4) +
     facet_grid(. ~ dept) +
     labs(x = '', y = 'Probability of admission', color = '', shape = '')
+```
+
+```{r}
+summary(m11.7, c('a'))$summary
+summary(m11.8, c('a', 'b'))$summary
 ```
 
 # Section 11.2: Poisson regression
@@ -559,7 +585,7 @@ model {
   }
 }
 '
-m_binomial <- stan(model_code = stan_program, data = stan_data)
+m_binom <- stan(model_code = stan_program, data = stan_data)
 
 stan_program <- '
 data {
@@ -583,10 +609,10 @@ generated quantities {
   p = exp(a[1]) / (exp(a[1]) + exp(a[2]));
 }
 '
-m_poisson <- stan(model_code = stan_program, data = stan_data)
+m_pois <- stan(model_code = stan_program, data = stan_data)
 ```
 
 ```{r}
-m_binomial
-m_poisson
+m_binom
+m_pois
 ```

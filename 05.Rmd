@@ -5,8 +5,24 @@ author: Vincent Arel-Bundock
 
 # Status
 
-* TODO: m5.4
-* All other models are replicated and checked against the book. There are small numerical difference, probably due to the difference between `quap` and `Stan`.
+Estimated and checked against the book:
+
+* m5.1
+* m5.2
+* m5.3
+* m5.5
+* m5.6
+* m5.7
+* m5.8
+* m5.9
+
+Note that there are small numerical differences, probably due to the difference between `quap` and `Stan`.
+
+TODO:
+
+* m5.4
+
+# Libraries
 
 ```{r, include=FALSE}
 # set default graphics theme if Vincent's personal package is installed
