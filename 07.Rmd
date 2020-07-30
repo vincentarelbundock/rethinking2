@@ -6,7 +6,16 @@ output: html_document
 
 # Status
 
-In the book, models m7.1 to m7.6 are estimated using `quap` rather than `Stan`. My estimates are similar for models m7.1 to 7.3, but diverge somewhat for the others. Also, my compatibility intervals for $\mu$ are very different. Not sure what the problem is.
+Estimated and checked against the book:
+
+* m7.1
+* m7.2
+* m7.3
+* m7.4
+* m7.5
+* m7.6
+
+Warning: In the book, models m7.1 to m7.6 are estimated using `quap` rather than `Stan`. My estimates are similar for models m7.1 to 7.3, but diverge somewhat for the others. Also, my compatibility intervals for $\mu$ are very different. Not sure what the problem is.
 
 # Libraries
 
