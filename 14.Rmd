@@ -1,14 +1,8 @@
 ---
-title: "Statistical Rethinking 2: Chapter 13"
+title: "Statistical Rethinking 2: Chapter 14"
 author: Vincent Arel-Bundock
 output: html_document
 ---
-
-# TODO
-
-* m14.1
-* m14.2
-* m14.3
 
 ```{r, include=FALSE}
 # set default graphics theme if Vincent's personal package is installed
@@ -17,7 +11,7 @@ if (requireNamespace('vincent', quietly = TRUE)) {
 }
 ```
 
-```{r, results=FALSE, message=FALSE}
+```{r, results=FALSE, message=FALSE, warning=FALSE}
 library(tidyverse)
 library(tidybayes)
 library(rstan)
@@ -55,7 +49,6 @@ mu <- a_cafe[cafe_id] + b_cafe[cafe_id]*afternoon
 sigma <- 0.5  # std dev within cafes
 wait <- rnorm( N_visits*N_cafes , mu , sigma )
 d <- data.frame( cafe=cafe_id , afternoon=afternoon , wait=wait )
-R <- rlkjcorr( 1e4 , K=2 , eta=2 )
 
 stan_data <- compose_data(d,
  		                  n_cafe = n_distinct(cafe))
@@ -97,17 +90,132 @@ model {
 "
 
 m14.1 <- stan(model_code = stan_program, data = stan_data)
+
+datplot <- m14.1 %>% 
+           spread_draws(Rho[i, j]) %>%
+           filter(i == 1, j == 2)
+
+ggplot(datplot, aes(Rho)) +
+    geom_density() +
+    xlim(-1, 1) +
+    xlab('Correlation')
 ```
 
-
-
 # Section 14.2: Advanced varying slopes
+
+```{r, warning=FALSE, message=FALSE, results=FALSE}
+
+stan_data <- read.csv('data/chimpanzees.csv', sep = ';') %>%
+             mutate(treatment = 1 + prosoc_left + 2 * condition) %>%
+             rename(block_id = block) %>%
+             compose_data(n_treatment = n_distinct(treatment),
+                          n_actor = n_distinct(actor),
+                          n_block_id = n_distinct(block_id))
+
+stan_program <- "
+data {
+    int n;
+    int n_treatment;
+    int n_actor;
+    int n_block_id;
+    int pulled_left[n];
+    int actor[n];
+    int treatment[n];
+    int block_id[n];
+}
+parameters {
+   vector[n_treatment] g; 
+   vector[n_treatment] alpha[n_actor];
+   vector[n_treatment] beta[n_block_id];
+   vector<lower=0>[4] sigma_actor;
+   vector<lower=0>[4] sigma_block;
+   corr_matrix[4] Rho_block;
+   corr_matrix[4] Rho_actor;
+}
+model {
+    // probability model
+    vector[n] p;
+    for (i in 1:n) {
+        p[i] = g[treatment[i]] + 
+               alpha[actor[i], treatment[i]] + 
+               beta[block_id[i], treatment[i]];
+        p[i] = inv_logit(p[i]);
+    }
+    pulled_left ~ binomial(1, p);
+
+    // adaptive priors
+    beta ~ multi_normal(rep_vector(0, 4),
+                        quad_form_diag(Rho_block, sigma_block));
+    alpha ~ multi_normal(rep_vector(0, 4),
+                         quad_form_diag(Rho_actor, sigma_actor));
+
+    // fixed priors
+    g ~ normal(0, 1);
+    Rho_actor ~ lkj_corr(4);
+    Rho_block ~ lkj_corr(4);
+    sigma_actor ~ exponential(1);
+    sigma_block ~ exponential(1);
+}
+"
+
+m14.2 <- stan(model_code = stan_program, data = stan_data)
+```
+
+```{r, warning=FALSE, message=FALSE, results=FALSE}
+
+stan_program <- "
+data {
+    int n;
+    int n_treatment;
+    int n_actor;
+    int n_block_id;
+    int pulled_left[n];
+    int actor[n];
+    int treatment[n];
+    int block_id[n];
+}
+parameters {
+   matrix[n_treatment, n_actor] z_actor;
+   matrix[n_treatment, n_block_id] z_block;
+   vector[n_treatment] g; 
+   vector<lower=0>[n_treatment] sigma_actor;
+   vector<lower=0>[n_treatment] sigma_block;
+   cholesky_factor_corr[n_treatment] L_Rho_block;
+   cholesky_factor_corr[n_treatment] L_Rho_actor;
+}
+transformed parameters {
+   matrix[n_actor, n_treatment] alpha;
+   matrix[n_block_id, n_treatment] beta;
+   beta = (diag_pre_multiply(sigma_block, L_Rho_block) * z_block)';
+   alpha = (diag_pre_multiply(sigma_actor, L_Rho_actor) * z_actor)';
+}
+
+model{
+    vector[n] p;
+    L_Rho_block ~ lkj_corr_cholesky( 2 );
+    sigma_block ~ exponential( 1 );
+    L_Rho_actor ~ lkj_corr_cholesky( 2 );
+    sigma_actor ~ exponential( 1 );
+    g ~ normal( 0 , 1 );
+    to_vector( z_block ) ~ normal( 0 , 1 );
+    to_vector( z_actor ) ~ normal( 0 , 1 );
+    for ( i in 1:n ) {
+        p[i] = g[treatment[i]] + alpha[actor[i], treatment[i]] + beta[block_id[i], treatment[i]];
+        p[i] = inv_logit(p[i]);
+    }
+    pulled_left ~ binomial( 1 , p );
+}
+"
+
+m14.3 <- stan(model_code = stan_program, data = stan_data)
+```
+
 
 # Section 14:3: Instruments and causal designs
 
 Zero true effect of E is confounded:
 
-```{r, results=FALSE, message=FALSE}
+```{r, results=FALSE, message=FALSE, warning=FALSE}
 set.seed(73)
 N <- 500
 U_sim <- rnorm( N )
@@ -142,16 +250,16 @@ model {
 }
 '
 
-m14.4 <- fit_model(stan_program, stan_data)
+m14.4 <- stan(model_code = stan_program, data = stan_data)
 ```
 
 ```{r}
-m14.4$summary()
+m14.4
 ```
 
 Controlling for the instrument leads to disaster:
 
-```{r, results=FALSE, message=FALSE}
+```{r, results=FALSE, message=FALSE, warning=FALSE}
 stan_program <- '
 data{
     int N;
@@ -176,17 +284,16 @@ model {
 }
 '
 
-m14.5 <- fit_model(stan_program, stan_data)
+m14.5 <- stan(model_code = stan_program, data = stan_data)
 ```
 
 ```{r}
-m14.5$summary()
+m14.5
 ```
-
 
 Instrumental variable model:
 
-```{r, results=FALSE, message=FALSE}
+```{r, results=FALSE, message=FALSE, warning=FALSE}
 stan_program <- "
 data{
     int N;
@@ -203,6 +310,8 @@ parameters {
     vector<lower=0>[2] Sigma;
 }
 model {
+    vector[2] MU[N];
+    vector[2] YY[N];
     vector[N] mu_w;
     vector[N] mu_e;
     Sigma ~ exponential(1);
@@ -215,8 +324,6 @@ model {
         mu_w[j] = aW + bEW * E[j];
         mu_e[j] = aE + bQE * Q[j];
     }
-    vector[2] MU[N];
-    vector[2] YY[N];
     for (j in 1:N) {
         MU[j] = [mu_w[j], mu_e[j]]';
         YY[j] = [W[j], E[j]]';
@@ -225,9 +332,9 @@ model {
 }
 "
 
-m14.6 <- fit_model(stan_program, stan_data)
+m14.6 <- stan(model_code = stan_program, data = stan_data)
 ```
 
 ```{r}
-m14.6$summary()
+m14.6
 ```
