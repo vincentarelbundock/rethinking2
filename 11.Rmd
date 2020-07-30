@@ -9,27 +9,21 @@ output: html_document
 Estimated and checked against the book:
 
 * m11.1
+* m11.2
+* m11.3
+* m11.4
+* m11.5
 * m11.6
 * m11.7
 * m11.8
 * m11.9
 * m11.10
-* m11.12
-* m_binom
-* m_pois
-
-Different results:
-
-* m11.4
 * m11.11
+* m11.12
 * m11.13
 * m11.14
-
-TODO:
-
-* m11.2
-* m11.3
-* m11.5
+* m_binom
+* m_pois
 
 # Libraries
 
@@ -87,7 +81,65 @@ m11.1 <- stan(model_code = stan_program, data = stan_data)
 m11.1
 ```
 
-My results for model `m11.4` are somewhat different from text. Signs and magnitudes are similar. Not sure why.
+```{r, warning=FALSE, message=FALSE, results=FALSE}
+stan_program <- '
+data {
+  int<lower=1> n;                       
+  int<lower=1> n_treatment;
+  int treatment[n];
+  int<lower=0, upper=1> pulled_left[n];
+}
+parameters {
+  real a;
+  real b[n_treatment];
+}
+model {
+  vector[n] p;
+  for (i in 1:n) {
+      p[i] = inv_logit(a + b[treatment[i]]);
+  }
+  pulled_left ~ binomial(1, p);
+  a ~ normal(0, 1.5);
+  b ~ normal(0, 10);
+}
+'
+
+m11.2 <- stan(model_code = stan_program, data = stan_data, iter = 5000)
+```
+
+```{r}
+m11.2
+```
+
+```{r, warning=FALSE, message=FALSE, results=FALSE}
+stan_program <- '
+data {
+  int<lower=1> n;                       
+  int<lower=1> n_treatment;
+  int treatment[n];
+  int<lower=0, upper=1> pulled_left[n];
+}
+parameters {
+  real a;
+  real b[n_treatment];
+}
+model {
+  vector[n] p;
+  for (i in 1:n) {
+      p[i] = inv_logit(a + b[treatment[i]]);
+  }
+  pulled_left ~ binomial(1, p);
+  a ~ normal(0, 1.5);
+  b ~ normal(0, 0.5);
+}
+'
+
+m11.3 <- stan(model_code = stan_program, data = stan_data)
+```
+
+```{r}
+m11.3
+```
 
 ```{r, message=FALSE, fig.asp = .3}
 stan_program <- '
@@ -112,7 +164,7 @@ transformed parameters{
   }
 }
 model {
-  a ~ normal(1, 1.5);
+  a ~ normal(0, 1.5);
   b ~ normal(0, 0.5);
   pulled_left ~ binomial(1, p);
 }
@@ -125,6 +177,10 @@ generated quantities {
 '
 
 m11.4 <- stan(model_code = stan_program, data = stan_data)
+```
+
+```{r}
+summary(m11.4, c('db13', 'db24', 'a', 'b'))$summary
 ```
 
 ```{r}
@@ -174,6 +230,52 @@ ggplot(datplot, aes(treatment, p, ymin = .lower, ymax = .upper, label = treatmen
   facet_grid(~ actor) +
   labs(x = 'Value', y = '') +
   theme_classic()
+```
+
+```{r, warning=FALSE, message=FALSE, results=FALSE}
+
+stan_data <- read.csv('data/chimpanzees.csv', sep = ';') %>%
+             mutate(treatment = factor(1 + prosoc_left + 2 * condition),
+                    side = prosoc_left + 1,
+                    cond = condition + 1) %>%
+             compose_data
+stan_data$n_actor <- n_distinct(stan_data$actor)
+stan_data$n_side <- n_distinct(stan_data$side)
+stan_data$n_treatment <- n_distinct(stan_data$treatment)
+stan_data$n_cond <- n_distinct(stan_data$cond)
+
+stan_program <- '
+data {
+  int n;
+  int n_actor;
+  int n_treatment;
+  int n_side;
+  int treatment[n];
+  int side[n];
+  int actor[n];
+  int pulled_left[n];
+}
+parameters {
+  real a[n_actor];
+  real bc[n_treatment];
+  real bs[n_side];
+}
+model {
+  vector[n] p;
+  a ~ normal(0, 1.5);
+  bs ~ normal(0, 0.5);
+  bc ~ normal(0, 0.5);
+  for (i in 1:n) {
+      p[i] = inv_logit(a[actor[i]] + bc[treatment[i]] + bs[side[i]]);
+  }
+  pulled_left ~ binomial(1, p);
+}
+'
+m11.5 <- stan(model_code = stan_program, data = stan_data)
+```
+
+```{r}
+m11.5
 ```
 
 ```{r, warning=FALSE, message=FALSE, results=FALSE}
@@ -459,7 +561,7 @@ ggplot(datplot, aes(.value, .variable)) +
 
 # Section 11.3: Multinomial and categorical models
 
-My results differ from the book, but the `ulam` replication code also seems to produce the same results as me.
+Results for models m11.13 and m11.14 differ from the book but are identical to those obtained by running the `rethink` replication code. Perhaps something changed in `R` random number generator between the publication of the book and my replication.
 
 ```{r, warning=FALSE, message=FALSE, results=FALSE}
 # simulate career choices among 500 individuals
@@ -503,8 +605,7 @@ model{
 }
 "
 
-m11.13 <- stan(model_code = stan_program, data = stan_data, 
-               control = list(adapt_delta = .95))
+m11.13 <- stan(model_code = stan_program, data = stan_data)
 ```
 
 ```{r}
