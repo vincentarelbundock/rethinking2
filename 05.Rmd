@@ -10,17 +10,14 @@ Estimated and checked against the book:
 * m5.1
 * m5.2
 * m5.3
+* m5.4
 * m5.5
 * m5.6
 * m5.7
 * m5.8
 * m5.9
 
-Note that there are small numerical differences, probably due to the difference between `quap` and `Stan`.
-
-TODO:
-
-* m5.4
+Warning: there are small numerical differences, probably due to the difference between `quap` and `Stan`.
 
 # Libraries
 
@@ -100,6 +97,7 @@ stan_data <- WaffleDivorce %>%
              compose_data(K = 2, 
                           y = Divorce,
                           X = model.matrix(~MedianAgeMarriage, .)) 
+
 m5.1 <- stan(model_code = stan_program, data = stan_data)
 
 stan_data <- WaffleDivorce %>%
@@ -141,7 +139,7 @@ ggplot(res, aes(x = b, y = Model, xmin = .lower, xmax = .upper)) +
     vincent::theme_vab()
 ```
 
-#### Figure 5.5
+Figure 5.5:
 
 ```{r}
 datplot <- m5.3 %>%
@@ -159,6 +157,49 @@ ggplot(datplot, aes(Observed, Predicted,
     coord_fixed()
 ```
 
+```{r, warning=FALSE, message=FALSE, results=FALSE}
+stan_program <- '
+data {
+  int<lower=1> n;   // number of observations
+  int<lower=1> K;   // number of regressors (including constant)
+  vector[n] y;      // outcome
+  matrix[n, K] X;   // regressors
+}
+parameters {
+  real<lower=0,upper=50> sigma;    // scale
+  vector[K] b;                     // coefficients (including constant)
+}
+transformed parameters {
+  vector[n] mu;                    // location
+  mu = X * b;
+}
+model {
+  y ~ normal(mu, sigma);    // probability model
+  sigma ~ exponential(1);   // prior for scale
+  b[1] ~ normal(0, 0.2);    // prior for intercept
+  for (i in 2:K) {          // priors for coefficients
+    b[i] ~ normal(0, 0.5);
+  }
+}
+generated quantities {
+  vector[n] yhat;           // predicted outcome
+  for (i in 1:n) yhat[i] = normal_rng(mu[i], sigma);
+}
+'
+
+stan_data <- WaffleDivorce %>%
+             compose_data(K = 2, 
+                          y = Marriage,
+                          X = model.matrix(~MedianAgeMarriage, .)) 
+
+
+m5.4 <- stan(model_code = stan_program, data = stan_data)
+```
+
+```{r}
+summary(m5.4, c('b', 'sigma'))$summary
+```
+
 # Section 5.2: Masked relationship
 
 ```{r, warning = FALSE, message = FALSE}
@@ -170,7 +211,6 @@ dat <- read.csv('data/milk.csv', sep = ';') %>%
        drop_na
 stan_data <- dat %>% compose_data
 
-# m5.5
 stan_program <- '
 data {
     int n;

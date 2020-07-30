@@ -5,7 +5,21 @@ author: Vincent Arel-Bundock
 
 # Status
 
-Models m6.1 through m6.12 estimated and checked against the originals.
+Estimated and checked against the book:
+
+* m6.1
+* m6.2
+* m6.3
+* m6.4
+* m6.5
+* m6.6
+* m6.7
+* m6.1
+* m6.8
+* m6.9
+* m6.10
+* m6.11
+* m6.12
 
 # Libraries
 
