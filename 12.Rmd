@@ -8,21 +8,18 @@ output: html_document
 
 Estimated and checked against the book:
 
+* m12.2
+* m12.3
+* m12.4
 * m12.6
 
 Different results:
 
-* m12.1: Can't replicate with book code either. Did seeds change?
+* m12.1
 
-TODO:
+TODO: 
 
-* m12.2
-* m12.3
-* m12.3_alt
-* m12.4
-* m12.4q
 * m12.5
-* m12.6
 
 # Libraries
 
@@ -38,10 +35,13 @@ library(tidyverse)
 library(tidybayes)
 library(rstan)
 library(patchwork)
+library(rethinking)
 options(mc.cores = 4)
 ```
 
 # Section 12.1: Over-dispersed counts
+
+I can't replicate the `ulam` result for `m12.1` in `rstan`.
 
 ```{r, warning=FALSE, message=FALSE, results=FALSE}
 stan_program <- '
@@ -56,18 +56,18 @@ parameters {
     real<lower=0> phi;
 }
 transformed parameters {
-    vector[n] pbar;
     real theta;
     theta = phi + 2;
+}
+model {
+    vector[n] pbar;
     for (i in 1:n) {
         pbar[i] = a[gender[i]];
         pbar[i] = inv_logit(pbar[i]);
     }
-}
-model {
+    admit ~ beta_binomial(applications, pbar * theta, (1 - pbar) * theta);
     phi ~ exponential(1);
     a ~ normal(0, 1.5);
-    admit ~ beta_binomial(applications, pbar * theta, (1 - pbar) * theta);
 }
 generated quantities {
     real da;
@@ -77,32 +77,165 @@ generated quantities {
 
 stan_data <- read.csv('data/UCBadmit.csv', sep = ';') %>%
              rename(gender = applicant.gender) %>%
+             mutate(gender = ifelse(gender == 'female', 2, 1)) %>%
              compose_data
 
-m12.1 <- stan(model_code = stan_program, data = stan_data, iter = 5000)
+m12.1 <- stan(model_code = stan_program, data = stan_data, iter = 1000, 
+              control = list(adapt_delta = .95,
+                             max_treedepth = 15))
 ```
 
 ```{r}
 summary(m12.1, c('a', 'phi'))$summary
 ```
 
-```{r}
-datplot <- m12.1 %>%
-           spread_draws(a[i], theta) %>%
-		   filter(i == 2) %>%
-		   sample_n(1000) 
 
-plot(NULL, xlim = c(0, 1), ylim = c(0, 4),
-	 xlab = 'Probability admit', ylab = 'Density')
-for (i in 1:nrow(datplot)) {
-    a <- 1 / (1 + exp(-datplot$a[i]))
-    b <- datplot$theta[1]
-    curve(rethinking::dbeta2(x, a, b), add = TRUE,
-          col = adjustcolor('grey', alpha = .1))
+```{r}
+stan_data <- read.csv('data/Kline.csv', sep = ';') %>%
+             mutate(logpop = standardize(log(population))) %>%
+             compose_data(n_contact = n_distinct(contact))
+
+stan_program <- "
+data{
+    int total_tools[10];
+    int population[10];
+    int contact[10];
 }
-a <- 1 / (1 + exp(-mean(datplot$a)))
-b <- mean(datplot$theta)
-curve(rethinking::dbeta2(x, a, b), add = TRUE)
+parameters{
+    vector[2] a;
+    vector<lower=0>[2] b;
+    real<lower=0> g;
+    real<lower=0> phi;
+}
+model{
+    vector[10] lambda;
+    phi ~ exponential( 1 );
+    g ~ exponential( 1 );
+    b ~ exponential( 1 );
+    a ~ normal( 1 , 1 );
+    for ( i in 1:10 ) {
+        lambda[i] = exp(a[contact[i]]) * population[i]^b[contact[i]]/g;
+    }
+    total_tools ~ neg_binomial_2( lambda , phi );
+}
+"
+m12.2 <- stan(model_code = stan_program, data = stan_data)
+```
+
+```{r}
+summary(m12.2, c('a', 'b', 'phi', 'g'))$summary
+```
+
+# Section 12.2: Zero-inflated outcomes
+
+```{r}
+set.seed(365)
+prob_drink <- .2
+rate_work <- 1
+n <- 365
+drink <- rbinom(n, 1, prob_drink)
+y <- (1 - drink) * rpois(n, rate_work)
+
+stan_data <- list(y = y, n = length(y))
+
+stan_program <- "
+data {
+    int n;
+    int y[n];
+}
+parameters {
+    real ap;
+    real al;
+}
+model {
+    real p;
+    real lambda;
+    p = inv_logit(ap);
+    lambda = exp(al);
+    ap ~ normal(-1.5, 1);
+    al ~ normal(1, .5);
+    for ( i in 1:n ) {
+        if (y[i] == 0)
+            target += log_mix( p , 0 , poisson_lpmf(0 | lambda) );
+        if (y[i] > 0)
+            target += log1m( p ) + poisson_lpmf(y[i] | lambda );
+    }
+}
+"
+m12.3 <- stan(model_code = stan_program, data = stan_data)
+```
+
+```{r}
+summary(m12.3, c('al', 'ap'))$summary
+```
+
+# Section 12.3: Ordered categorical outcomes
+
+```{r, warning=FALSE, message=FALSE, results=FALSE}
+stan_data <- read.csv('data/Trolley.csv', sep = ';') %>%
+             compose_data(k = n_distinct(response) - 1)
+
+stan_program <- "
+data {
+    int n;
+    int k;
+    int response[n];
+}
+parameters {
+    ordered[k] cutpoints;
+}
+model {
+    for (i in 1:n) {
+        response[i] ~ ordered_logistic(0, cutpoints);
+    }
+    cutpoints ~ normal(0, 15);
+}
+"
+m12.4 <- stan(model_code = stan_program, data = stan_data)
+```
+
+```{r, warning=FALSE, message=FALSE, results=FALSE}
+stan_data <- read.csv('data/Trolley.csv', sep = ';') %>%
+             compose_data(k = n_distinct(response) - 1)
+
+stan_program <- "
+data {
+    int n;
+    int k;
+    int response[n];
+    int action[n];
+    int intention[n];
+    int contact[n];
+}
+parameters {
+    ordered[k] cutpoints;
+    real bA;
+    real bI;
+    real bC;
+    real bIA;
+    real bIC;
+}
+model {
+    vector[n] BI;
+    vector[n] phi;
+    for (i in 1:n) {
+        BI[i] = bI + bIA * action[i] + bIC * contact[i];
+        phi[i] = bA * action[i] + bC * contact[i] + bI * intention[i];
+        response[i] ~ ordered_logistic(0, cutpoints);
+    }
+    cutpoints ~ normal(0, 15);
+    bA ~ normal(0, .5);
+    bI ~ normal(0, .5);
+    bC ~ normal(0, .5);
+    bIA ~ normal(0, .5);
+    bIC ~ normal(0, .5);
+}
+"
+m12.5 <- stan(model_code = stan_program, data = stan_data)
+```
+
+```{r}
+summary(m12.5, c('bA', 'bI', 'bC', 'bIA', 'bIC', 'cutpoints'))$summary
 ```
 
 # Section 12.4: Ordered categorical predictors
