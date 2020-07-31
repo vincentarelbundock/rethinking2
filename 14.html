@@ -391,10 +391,10 @@ summary {
 <li>m14.4</li>
 <li>m14.5</li>
 <li>m14.6</li>
+<li>m14.7</li>
 </ul>
 <p>TODO:</p>
 <ul>
-<li>m14.7</li>
 <li>m14.8</li>
 <li>m14.8nc</li>
 <li>m14.9</li>
@@ -408,6 +408,7 @@ summary {
 library(tidybayes)
 library(rstan)
 library(patchwork)
+library(rethinking)
 options(mc.cores = 4)</code></pre>
 </div>
 <div id="section-14.1-varying-slopes-by-construction" class="section level1">
@@ -640,7 +641,7 @@ m14.4 &lt;- stan(model_code = stan_program, data = stan_data)</code></pre>
 ## sigma    0.92    0.00 0.03    0.86    0.90    0.92    0.94    0.98  4165    1
 ## lp__  -208.65    0.03 1.25 -212.03 -209.17 -208.33 -207.76 -207.26  1637    1
 ## 
-## Samples were drawn using NUTS(diag_e) at Thu Jul 30 10:59:12 2020.
+## Samples were drawn using NUTS(diag_e) at Fri Jul 31 10:26:23 2020.
 ## For each parameter, n_eff is a crude measure of effective sample size,
 ## and Rhat is the potential scale reduction factor on split chains (at 
 ## convergence, Rhat=1).</code></pre>
@@ -682,7 +683,7 @@ m14.5 &lt;- stan(model_code = stan_program, data = stan_data)</code></pre>
 ## sigma    0.86    0.00 0.03    0.80    0.84    0.86    0.87    0.91  3696    1
 ## lp__  -174.78    0.03 1.43 -178.47 -175.51 -174.45 -173.72 -173.01  2156    1
 ## 
-## Samples were drawn using NUTS(diag_e) at Thu Jul 30 10:59:35 2020.
+## Samples were drawn using NUTS(diag_e) at Fri Jul 31 10:26:45 2020.
 ## For each parameter, n_eff is a crude measure of effective sample size,
 ## and Rhat is the potential scale reduction factor on split chains (at 
 ## convergence, Rhat=1).</code></pre>
@@ -756,10 +757,76 @@ m14.6 &lt;- stan(model_code = stan_program, data = stan_data)</code></pre>
 ## Sigma[2]    1
 ## lp__        1
 ## 
-## Samples were drawn using NUTS(diag_e) at Thu Jul 30 11:00:38 2020.
+## Samples were drawn using NUTS(diag_e) at Fri Jul 31 10:27:44 2020.
 ## For each parameter, n_eff is a crude measure of effective sample size,
 ## and Rhat is the potential scale reduction factor on split chains (at 
 ## convergence, Rhat=1).</code></pre>
+<div id="m14.7" class="section level3">
+<h3>m14.7</h3>
+<pre class="r"><code>load(&#39;data/KosterLeckie.rda&#39;) 
+stan_data &lt;- kl_dyads %&gt;%
+             compose_data(n_households = max(hidB))
+
+stan_program &lt;- &quot;
+data {
+  int n;
+  int n_households;
+  int hidA[n];
+  int hidB[n];
+  int giftsAB[n];
+  int giftsBA[n];
+  int did[n];
+}
+parameters{
+    real a;
+    vector[2] gr[n_households];
+    corr_matrix[2] Rho_gr;
+    vector&lt;lower=0&gt;[2] sigma_gr;
+    matrix[2,n] z;
+    cholesky_factor_corr[2] L_Rho_d;
+    real&lt;lower=0&gt; sigma_d;
+}
+transformed parameters{
+    matrix[n,2] d;
+    d = (diag_pre_multiply(rep_vector(sigma_d, 2), L_Rho_d) * z)&#39;;
+}
+model{
+    vector[n] lambdaAB;
+    vector[n] lambdaBA;
+    sigma_d ~ exponential( 1 );
+    L_Rho_d ~ lkj_corr_cholesky( 8 );
+    to_vector( z ) ~ normal( 0 , 1 );
+    sigma_gr ~ exponential( 1 );
+    Rho_gr ~ lkj_corr( 4 );
+    gr ~ multi_normal( rep_vector(0,2) , quad_form_diag(Rho_gr , sigma_gr) );
+    a ~ normal( 0 , 1 );
+    for ( i in 1:n ) {
+        lambdaBA[i] = a + gr[hidB[i], 1] + gr[hidA[i], 2] + d[did[i], 2];
+        lambdaBA[i] = exp(lambdaBA[i]);
+        lambdaAB[i] = a + gr[hidA[i], 1] + gr[hidB[i], 2] + d[did[i], 1];
+        lambdaAB[i] = exp(lambdaAB[i]);
+    }
+    giftsBA ~ poisson( lambdaBA );
+    giftsAB ~ poisson( lambdaAB );
+}
+&quot;
+m14.7 &lt;- stan(model_code = stan_program, data = stan_data)</code></pre>
+<pre class="r"><code>summary(m14.7, c(&#39;Rho_gr&#39;, &#39;sigma_gr&#39;))$summary</code></pre>
+<pre><code>##                   mean      se_mean           sd       2.5%        25%
+## Rho_gr[1,1]  1.0000000          NaN 0.000000e+00  1.0000000  1.0000000
+## Rho_gr[1,2] -0.4111751 4.412742e-03 1.998837e-01 -0.7545967 -0.5567989
+## Rho_gr[2,1] -0.4111751 4.412742e-03 1.998837e-01 -0.7545967 -0.5567989
+## Rho_gr[2,2]  1.0000000 1.357080e-18 8.307332e-17  1.0000000  1.0000000
+## sigma_gr[1]  0.8301363 2.460774e-03 1.384679e-01  0.6005225  0.7313054
+## sigma_gr[2]  0.4240175 2.219945e-03 9.392287e-02  0.2683883  0.3573198
+##                    50%        75%      97.5%    n_eff      Rhat
+## Rho_gr[1,1]  1.0000000  1.0000000 1.00000000      NaN       NaN
+## Rho_gr[1,2] -0.4257099 -0.2800202 0.01769984 2051.813 1.0025037
+## Rho_gr[2,1] -0.4257099 -0.2800202 0.01769984 2051.813 1.0025037
+## Rho_gr[2,2]  1.0000000  1.0000000 1.00000000 3747.249 0.9989995
+## sigma_gr[1]  0.8155139  0.9137535 1.13431459 3166.321 1.0003924
+## sigma_gr[2]  0.4140459  0.4798694 0.63475491 1790.022 1.0011473</code></pre>
+</div>
 </div>
 
 
