@@ -14,10 +14,10 @@ Estimated and checked against the book:
 * m14.4
 * m14.5
 * m14.6
+* m14.7
 
 TODO:
 
-* m14.7
 * m14.8
 * m14.8nc
 * m14.9
@@ -38,6 +38,7 @@ library(tidyverse)
 library(tidybayes)
 library(rstan)
 library(patchwork)
+library(rethinking)
 options(mc.cores = 4)
 ```
 
@@ -355,4 +356,62 @@ m14.6 <- stan(model_code = stan_program, data = stan_data)
 
 ```{r}
 m14.6
+```
+
+### m14.7
+
+```{r}
+
+load('data/KosterLeckie.rda') 
+stan_data <- kl_dyads %>%
+             compose_data(n_households = max(hidB))
+
+stan_program <- "
+data {
+  int n;
+  int n_households;
+  int hidA[n];
+  int hidB[n];
+  int giftsAB[n];
+  int giftsBA[n];
+  int did[n];
+}
+parameters{
+    real a;
+    vector[2] gr[n_households];
+    corr_matrix[2] Rho_gr;
+    vector<lower=0>[2] sigma_gr;
+    matrix[2,n] z;
+    cholesky_factor_corr[2] L_Rho_d;
+    real<lower=0> sigma_d;
+}
+transformed parameters{
+    matrix[n,2] d;
+    d = (diag_pre_multiply(rep_vector(sigma_d, 2), L_Rho_d) * z)';
+}
+model{
+    vector[n] lambdaAB;
+    vector[n] lambdaBA;
+    sigma_d ~ exponential( 1 );
+    L_Rho_d ~ lkj_corr_cholesky( 8 );
+    to_vector( z ) ~ normal( 0 , 1 );
+    sigma_gr ~ exponential( 1 );
+    Rho_gr ~ lkj_corr( 4 );
+    gr ~ multi_normal( rep_vector(0,2) , quad_form_diag(Rho_gr , sigma_gr) );
+    a ~ normal( 0 , 1 );
+    for ( i in 1:n ) {
+        lambdaBA[i] = a + gr[hidB[i], 1] + gr[hidA[i], 2] + d[did[i], 2];
+        lambdaBA[i] = exp(lambdaBA[i]);
+        lambdaAB[i] = a + gr[hidA[i], 1] + gr[hidB[i], 2] + d[did[i], 1];
+        lambdaAB[i] = exp(lambdaAB[i]);
+    }
+    giftsBA ~ poisson( lambdaBA );
+    giftsAB ~ poisson( lambdaAB );
+}
+"
+m14.7 <- stan(model_code = stan_program, data = stan_data)
+```
+
+```{r}
+summary(m14.7, c('Rho_gr', 'sigma_gr'))$summary
 ```
