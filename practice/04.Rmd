@@ -1,0 +1,187 @@
+---
+title: "Statistical Rethinking 2: Chapter 4 Practice"
+subtitle:
+author: Vincent Arel-Bundock
+output: html_document
+---
+
+# Warning
+
+This file includes sketches of solutions for some of the practice problems in *Statistical Rethinking (2nd Ed.)*. They were not written by an expert or reviewed by one. Please read critically and send me comments or suggestions.
+
+# Libraries
+
+```{r, include=FALSE}
+# set default graphics theme if Vincent's personal package is installed
+if (requireNamespace('vincent', quietly = TRUE)) {
+        vincent::theming()
+}
+```
+
+```{r, results=FALSE, message=FALSE}
+library(tidyverse)
+library(tidybayes)
+library(rstan)
+library(patchwork)
+options(mc.cores = 4)
+```
+
+# 4H1
+
+```{r, results=FALSE, message=FALSE}
+stan_data <- read.csv('../data/Howell1.csv', sep = ';') %>%
+ 			 filter(age >= 18) %>%
+             compose_data(xbar = mean(weight),
+                          weight_hat = c(46.95,
+                                         43.72,
+                                         64.78,
+                                         32.59,
+                                         54.63))
+
+stan_program <- '
+data {
+  int<lower=1> n;
+  real xbar;
+  vector[n] height;
+  vector[n] weight;
+  vector[5] weight_hat;
+}
+parameters {
+  real<lower=0,upper=50> sigma;
+  real<lower=0> b;
+  real a;
+}
+transformed parameters {
+  vector[n] mu;
+  mu = a + b * (weight - xbar);
+}
+model {
+  height ~ normal(mu, sigma);
+  a ~ normal(178, 20);
+  b ~ lognormal(0, 1);
+  sigma ~ uniform(0, 50);
+}
+generated quantities {
+  vector[5] height_hat;
+  vector[n] yhat;
+  vector[n] diff10;
+  for (i in 1:5) {
+      height_hat[i] = a + b * (weight[i] - xbar);
+      height_hat[i] = normal_rng(height_hat[i], sigma);
+  }
+  for (i in 1:n) {
+      yhat[i] = a + b * (weight[i] - xbar);
+      yhat[i] = normal_rng(yhat[i], sigma);
+  }
+  for (i in 1:n) {
+      diff10[i] = (a + b * (weight[i] + 10 - xbar)) -
+                  (a + b * (weight[i] - xbar));
+  }
+}
+'
+
+mod <- stan(model_code = stan_program, data = stan_data)
+
+```
+
+```{r}
+mod %>% 
+       spread_draws(height_hat[i]) %>%
+       mean_qi() %>%
+       mutate(Individual = 1:5,
+              Weight = stan_data$weight_hat)  %>%
+       select(Individual, Weight, 
+              `Expected height` = height_hat,
+              `[.025, ` = .lower,
+              `.975]`   = .upper)
+```
+
+# 4H2
+
+```{r, warning=FALSE, message=FALSE, results=FALSE}
+dat <- read.csv('../data/Howell1.csv', sep = ';') %>%
+ 	   filter(age < 18)
+
+stan_data <- dat %>% 
+             compose_data(xbar = mean(weight),
+             weight_hat = rep(0, 5))
+
+mod <- stan(model_code = stan_program, data = stan_data)
+
+# Table
+datplot <- mod %>% gather_draws(diff10[i])
+p1 <- ggplot(datplot, aes(x = .value)) +
+      geom_density() +
+      labs(y = 'Posterior density',
+           x = 'How much taller for each 10\nunits of increase in weight?')
+
+# Plot intervals
+datplot <- mod %>% 
+           spread_draws(mu[i], yhat[i]) %>%
+           mean_qi %>%
+           left_join(mutate(dat, i = 1:n()), by = 'i')
+           
+p2 <- ggplot(datplot) +
+      geom_point(aes(x = weight, y = height)) +
+      geom_ribbon(aes(x = weight, ymin = yhat.lower, ymax = yhat.upper), 
+                  alpha = .1) +
+      geom_ribbon(aes(x = weight, ymin = mu.lower, ymax = mu.upper), 
+                  alpha = .2, fill = 'red') +
+      geom_line(aes(x = weight, y = mu))
+
+p1 + p2
+```
+
+# 4H3
+
+```{r, warning=FALSE, message=FALSE, results=FALSE}
+dat <- read.csv('../data/Howell1.csv', sep = ';')
+stan_data <- dat %>%
+             compose_data(xbar = mean(weight))
+
+stan_program <- '
+data {
+  int<lower=1> n;
+  real xbar;
+  vector[n] height;
+  vector[n] weight;
+}
+parameters {
+  real<lower=0,upper=50> sigma;
+  real<lower=0> b;
+  real a;
+}
+transformed parameters {
+  vector[n] mu;
+  mu = a + b * (log(weight) - log(xbar));
+}
+model {
+  height ~ normal(mu, sigma);
+  a ~ normal(178, 20);
+  b ~ lognormal(0, 1);
+  sigma ~ uniform(0, 50);
+}
+generated quantities {
+  vector[n] yhat;
+  for (i in 1:n) {
+      yhat[i] = a + b * (log(weight[i]) - log(xbar));
+      yhat[i] = normal_rng(yhat[i], sigma);
+  }
+}
+'
+
+mod <- stan(model_code = stan_program, data = stan_data)
+
+datplot <- mod %>% 
+           spread_draws(mu[i], yhat[i]) %>%
+           mean_qi %>%
+           left_join(mutate(dat, i = 1:n()), by = 'i')
+           
+ggplot(datplot) +
+      geom_point(aes(x = weight, y = height)) +
+      geom_ribbon(aes(x = weight, ymin = yhat.lower, ymax = yhat.upper), 
+                  alpha = .1) +
+      geom_ribbon(aes(x = weight, ymin = mu.lower, ymax = mu.upper), 
+                  alpha = .2, fill = 'red') +
+      geom_line(aes(x = weight, y = mu))
+```

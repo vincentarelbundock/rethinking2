@@ -1,0 +1,190 @@
+---
+title: "Statistical Rethinking 2: Chapter 7 Practice"
+subtitle:
+author: Vincent Arel-Bundock
+output: html_document
+---
+
+# Warning
+
+This file includes sketches of solutions for some of the practice problems in *Statistical Rethinking (2nd Ed.)*. They were not written by an expert or reviewed by one. Please read critically and send me comments or suggestions.
+
+# Libraries
+
+```{r, include=FALSE}
+# set default graphics theme if Vincent's personal package is installed
+if (requireNamespace('vincent', quietly = TRUE)) {
+        vincent::theming()
+}
+```
+
+```{r, results=FALSE, message=FALSE}
+library(tidyverse)
+library(tidybayes)
+library(rstan)
+library(patchwork)
+library(loo)
+options(mc.cores = 4)
+```
+
+# 7H1
+
+```{r, warning=FALSE, message=FALSE, results='hide', out.width='100%', fig.asp=.4}
+dat <- read.csv('../data/Laffer.csv', sep = ';')
+
+stan_program <- '
+data {
+    int n;
+    int k;
+    matrix[n, k] X;
+    vector[n] y;
+}
+parameters {
+    vector[k] b;
+    real<lower=0> sigma;
+}
+model {
+    vector[n] mu;
+    mu = X * b;
+    y ~ normal(mu, sigma);
+    b ~ normal(0, 3);
+    sigma ~ exponential(1);
+}
+generated quantities {
+    vector[n] log_lik;
+    vector[n] yhat;
+    vector[n] pred;
+    yhat = X * b;
+    for (i in 1:n) {
+        pred[i] = normal_rng(yhat[i], sigma);
+    }
+    for ( i in 1:n ) {
+        log_lik[i] = normal_lpdf( y[i] | yhat[i] , sigma );
+    }
+}
+'
+
+stan_data <- dat %>%
+             compose_data(X = model.matrix(~tax_rate),
+                          y = tax_revenue,
+                          k = ncol(X))
+mod_lin <- stan(model_code = stan_program, data = stan_data)
+
+stan_data <- dat %>%
+             compose_data(X = model.matrix(~tax_rate + I(tax_rate^2)),
+                          y = tax_revenue,
+                          k = ncol(X))
+mod_qua <- stan(model_code = stan_program, data = stan_data)
+
+stan_data <- dat %>%
+             compose_data(X = model.matrix(~tax_rate + 
+                                            I(tax_rate^2) +
+                                            I(tax_rate^3)),
+                          y = tax_revenue,
+                          k = ncol(X))
+mod_cub <- stan(model_code = stan_program, data = stan_data)
+
+
+plot_predictions <- function(model) {
+    datplot <- model %>%
+               spread_draws(yhat[i], pred[i]) %>%
+               mean_qi %>%
+               left_join(mutate(dat, i = 1:n()), by = 'i')
+    ggplot(datplot, aes(tax_rate, tax_revenue)) +
+        geom_point() +
+        geom_ribbon(aes(ymin = pred.lower, ymax = pred.upper), 
+                    alpha = .1) +
+        geom_ribbon(aes(ymin = yhat.lower, ymax = yhat.upper), 
+                    alpha = .2, fill = 'red') +
+        geom_line(aes(y = yhat)) +
+        labs(x = 'Tax rate',
+             y = 'Tax revenue') +
+        ylim(-5, 11)
+}
+
+p1 <- plot_predictions(mod_lin) + ggtitle('Linear')
+p2 <- plot_predictions(mod_qua) + ggtitle('Quadratic')
+p3 <- plot_predictions(mod_cub) + ggtitle('Cubic')
+p1 + p2 + p3
+```
+
+# 7H2 
+
+Model comparison:
+
+```{r}
+waic(extract_log_lik(mod_lin))
+waic(extract_log_lik(mod_qua))
+waic(extract_log_lik(mod_cub))
+
+psis(extract_log_lik(mod_lin))
+psis(extract_log_lik(mod_qua))
+psis(extract_log_lik(mod_cub))
+
+loo(mod_lin)
+loo(mod_qua)
+loo(mod_cub)
+```
+
+Robust regression:
+
+```{r, warning=FALSE, message=FALSE, results='hide', out.width='100%', fig.asp=.4}
+dat <- read.csv('../data/Laffer.csv', sep = ';')
+
+stan_program <- '
+data {
+    int n;
+    int k;
+    matrix[n, k] X;
+    vector[n] y;
+}
+parameters {
+    vector[k] b;
+    real<lower=0> sigma;
+}
+model {
+    vector[n] mu;
+    mu = X * b;
+    y ~ student_t(2, mu, sigma);
+    b ~ normal(0, 3);
+    sigma ~ exponential(1);
+}
+generated quantities {
+    vector[n] log_lik;
+    vector[n] yhat;
+    vector[n] pred;
+    yhat = X * b;
+    for (i in 1:n) {
+        pred[i] = normal_rng(yhat[i], sigma);
+    }
+    for ( i in 1:n ) {
+        log_lik[i] = normal_lpdf( y[i] | yhat[i] , sigma );
+    }
+}
+'
+
+stan_data <- dat %>%
+             compose_data(X = model.matrix(~tax_rate),
+                          y = tax_revenue,
+                          k = ncol(X))
+mod_lin <- stan(model_code = stan_program, data = stan_data, iter = 5000)
+
+stan_data <- dat %>%
+             compose_data(X = model.matrix(~tax_rate + I(tax_rate^2)),
+                          y = tax_revenue,
+                          k = ncol(X))
+mod_qua <- stan(model_code = stan_program, data = stan_data, iter = 5000)
+
+stan_data <- dat %>%
+             compose_data(X = model.matrix(~tax_rate + 
+                                            I(tax_rate^2) +
+                                            I(tax_rate^3)),
+                          y = tax_revenue,
+                          k = ncol(X))
+mod_cub <- stan(model_code = stan_program, data = stan_data, iter = 5000)
+
+p1 <- plot_predictions(mod_lin) + ggtitle('Linear')
+p2 <- plot_predictions(mod_qua) + ggtitle('Quadratic')
+p3 <- plot_predictions(mod_cub) + ggtitle('Cubic')
+p1 + p2 + p3
+```
