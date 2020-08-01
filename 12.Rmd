@@ -11,15 +11,12 @@ Estimated and checked against the book:
 * m12.2
 * m12.3
 * m12.4
+* m12.5
 * m12.6
 
 Different results:
 
 * m12.1
-
-TODO: 
-
-* m12.5
 
 # Libraries
 
@@ -36,20 +33,20 @@ library(tidybayes)
 library(rstan)
 library(patchwork)
 library(rethinking)
-options(mc.cores = 2)
+options(mc.cores = 4)
 ```
 
 # Section 12.1: Over-dispersed counts
 
-I can't replicate the `ulam` result for `m12.1` in `rstan`.
+*Warning*: I have not yet been able to replicate the `ulam` results for `m12.1` in `rstan`.
 
 ```{r, warning=FALSE, message=FALSE, results=FALSE}
 stan_program <- '
 data {
     int n;
-    int gender[n];
-    int admit[n];
     int applications[n];
+    int admit[n];
+    int gender[n];
 }
 parameters {
     vector[2] a;
@@ -61,13 +58,13 @@ transformed parameters {
 }
 model {
     vector[n] pbar;
+    phi ~ exponential(1);
+    a ~ normal(0, 1.5);
     for (i in 1:n) {
         pbar[i] = a[gender[i]];
         pbar[i] = inv_logit(pbar[i]);
     }
     admit ~ beta_binomial(applications, pbar * theta, (1 - pbar) * theta);
-    phi ~ exponential(1);
-    a ~ normal(0, 1.5);
 }
 generated quantities {
     real da;
@@ -80,17 +77,15 @@ stan_data <- read.csv('data/UCBadmit.csv', sep = ';') %>%
              mutate(gender = ifelse(gender == 'female', 2, 1)) %>%
              compose_data
 
-m12.1 <- stan(model_code = stan_program, data = stan_data, iter = 1000, 
-              control = list(adapt_delta = .95,
-                             max_treedepth = 15))
+m12.1 <- stan(model_code = stan_program, data = stan_data, iter = 5000, 
+              control = list(adapt_delta = .95))
 ```
 
 ```{r}
 summary(m12.1, c('a', 'phi'))$summary
 ```
 
-
-```{r}
+```{r, warning=FALSE, message=FALSE, results=FALSE}
 stan_data <- read.csv('data/Kline.csv', sep = ';') %>%
              mutate(logpop = standardize(log(population))) %>%
              compose_data(n_contact = n_distinct(contact))
@@ -220,8 +215,8 @@ model {
     vector[n] phi;
     for (i in 1:n) {
         BI[i] = bI + bIA * action[i] + bIC * contact[i];
-        phi[i] = bA * action[i] + bC * contact[i] + bI * intention[i];
-        response[i] ~ ordered_logistic(0, cutpoints);
+        phi[i] = bA * action[i] + bC * contact[i] + BI[i] * intention[i];
+        response[i] ~ ordered_logistic(phi[i], cutpoints);
     }
     cutpoints ~ normal(0, 15);
     bA ~ normal(0, .5);
@@ -235,7 +230,13 @@ m12.5 <- stan(model_code = stan_program, data = stan_data)
 ```
 
 ```{r}
-summary(m12.5, c('bA', 'bI', 'bC', 'bIA', 'bIC', 'cutpoints'))$summary
+datplot <- m12.5 %>%
+           gather_draws(bA, bI, bC, bIA, bIC) %>%
+           mean_qi()
+
+ggplot(datplot, aes(y = .variable, x = .value, xmin = .lower, xmax = .upper)) +
+    geom_pointrange() +
+    geom_vline(xintercept = 0, linetype = 'dotted')
 ```
 
 # Section 12.4: Ordered categorical predictors

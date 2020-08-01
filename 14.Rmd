@@ -15,11 +15,7 @@ Estimated and checked against the book:
 * m14.5
 * m14.6
 * m14.7
-
-TODO:
-
 * m14.8
-* m14.8nc
 * m14.9
 * m14.10
 * m14.11
@@ -34,11 +30,12 @@ if (requireNamespace('vincent', quietly = TRUE)) {
 ```
 
 ```{r, results=FALSE, message=FALSE, warning=FALSE}
-library(tidyverse)
 library(tidybayes)
 library(rstan)
 library(patchwork)
 library(rethinking)
+library(tidyverse)
+library(ape)
 options(mc.cores = 4)
 ```
 
@@ -414,4 +411,187 @@ m14.7 <- stan(model_code = stan_program, data = stan_data)
 
 ```{r}
 summary(m14.7, c('Rho_gr', 'sigma_gr'))$summary
+```
+
+# Section 14.5: Continuous categories and the Gaussian process
+
+```{r, warning=FALSE, message=FALSE, results=FALSE}
+load('data/islandsDistMatrix.rda')
+stan_data <- read.csv('data/Kline2.csv', sep = ';') %>%
+             mutate(society = 1:10) %>%
+             compose_data(Dmat = islandsDistMatrix)
+
+stan_program <- "
+// cov_GPL2 macro extracted from ulam object with get_stancode
+functions{
+    matrix cov_GPL2(matrix x, real sq_alpha, real sq_rho, real delta) {
+        int N = dims(x)[1];
+        matrix[N, N] K;
+        for (i in 1:(N-1)) {
+          K[i, i] = sq_alpha + delta;
+          for (j in (i + 1):N) {
+            K[i, j] = sq_alpha * exp(-sq_rho * square(x[i,j]) );
+            K[j, i] = K[i, j];
+          }
+        }
+        K[N, N] = sq_alpha + delta;
+        return K;
+    }
+}
+data {
+    int n;
+    int total_tools[n];
+    int population[n];
+    int society[n];
+    matrix[n, n] Dmat;
+}
+parameters {
+    vector[n] k;
+    real<lower=0> a;
+    real<lower=0> b;
+    real<lower=0> g;
+    real<lower=0> etasq;
+    real<lower=0> rhosq;
+}
+model{
+    vector[n] lambda;
+    matrix[n, n] SIGMA;
+    rhosq ~ exponential( 0.5 );
+    etasq ~ exponential( 2 );
+    a ~ exponential( 1 );
+    b ~ exponential( 1 );
+    g ~ exponential( 1 );
+    SIGMA = cov_GPL2(Dmat, etasq, rhosq, 0.01);
+    k ~ multi_normal( rep_vector(0,n) , SIGMA );
+    for ( i in 1:n ) {
+        lambda[i] = (a * population[i]^b/g) * exp(k[society[i]]);
+    }
+    total_tools ~ poisson( lambda );
+}
+"
+
+m14.8 <- stan(model_code = stan_program, data = stan_data)
+```
+
+```{r, warning=FALSE, message=FALSE, results=FALSE}
+standardize <- function(x) as.vector(scale(x))
+dat <- read.csv('data/Primates301.csv', sep = ';') %>%
+             dplyr::select(name, mass = body, brain, group_size) %>%
+             drop_na %>%
+             mutate(mass = standardize(log(mass)),
+                    brain = standardize(log(brain)),
+                    group_size = standardize(log(group_size))) 
+stan_data <- dat %>%
+             compose_data(Dmat = diag(nrow(.)))
+
+stan_program <- "
+data{
+    int n;
+    vector[n] mass;
+    vector[n] brain;
+    vector[n] group_size;
+    matrix[n, n] Dmat;
+}
+parameters{
+    real a;
+    real bG;
+    real bM;
+    real<lower=0> sigma_sq;
+}
+model{
+    vector[n] mu;
+    matrix[n, n] S;
+    sigma_sq ~ exponential( 1 );
+    bM ~ normal( 0 , 0.5 );
+    bG ~ normal( 0 , 0.5 );
+    a ~ normal( 0 , 1 );
+    S = Dmat * sigma_sq;
+    for ( i in 1:n ) {
+        mu[i] = a + bM * mass[i] + bG * group_size[i];
+    }
+    brain ~ multi_normal( mu , S);
+}
+"
+
+m14.9 <- stan(model_code = stan_program, data = stan_data)
+```
+
+```{r}
+m14.9
+```
+
+```{r, warning=FALSE, message=FALSE, results=FALSE}
+library(ape)
+data(Primates301_nex)
+
+tree_trimmed <- keep.tip( Primates301_nex, dat$name )
+Rbm <- corBrownian( phy=tree_trimmed )
+V <- vcv(Rbm)
+Dmat <- cophenetic( tree_trimmed )
+
+stan_data <- compose_data(dat,
+                          V = V[dat$name, dat$name],
+                          Dmat = V / max(V))
+
+m14.10 <- stan(model_code = stan_program, data = stan_data)
+```
+
+```{r}
+m14.10
+```
+
+```{r, warning=FALSE, message=FALSE, results=FALSE}
+
+stan_program <- "
+functions{
+    matrix cov_GPL1(matrix x, real sq_alpha, real sq_rho, real delta) {
+        int N = dims(x)[1];
+        matrix[N, N] K;
+        for (i in 1:(N-1)) {
+          K[i, i] = sq_alpha + delta;
+          for (j in (i + 1):N) {
+            K[i, j] = sq_alpha * exp(-sq_rho * x[i,j] );
+            K[j, i] = K[i, j];
+          }
+        }
+        K[N, N] = sq_alpha + delta;
+        return K;
+    }
+}
+data{
+    int n;
+    vector[n] mass;
+    vector[n] brain;
+    vector[n] group_size;
+    matrix[n,n] Dmat;
+}
+parameters{
+    real a;
+    real bG;
+    real bM;
+    real<lower=0> etasq;
+    real<lower=0> rhosq;
+}
+model{
+    vector[n] mu;
+    matrix[n, n] SIGMA;
+    rhosq ~ normal( 3 , 0.25 );
+    etasq ~ normal( 1 , 0.25 );
+    bM ~ normal( 0 , 0.5 );
+    bG ~ normal( 0 , 0.5 );
+    a ~ normal( 0 , 1 );
+    SIGMA = cov_GPL1(Dmat, etasq, rhosq, 0.01);
+    for ( i in 1:n ) {
+        mu[i] = a + bM * mass[i] + bG * group_size[i];
+    }
+    brain ~ multi_normal( mu , SIGMA );
+}
+"
+
+stan_data$Dmat <- Dmat[dat$name, dat$name] / max(Dmat)
+m14.11 <- stan(model_code = stan_program, data = stan_data)
+```
+
+```{r}
+m14.11
 ```

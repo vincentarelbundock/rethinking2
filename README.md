@@ -1,6 +1,6 @@
 # Statistical Rethinking 2 with `Stan` and `R`
 
-Vincent is trying to replicate (nearly) all the models in Richard McElreath's [*Statistical Rethinking (2nd ed.)*](https://xcelab.net/rm/statistical-rethinking/) book using `Stan`, `R`, `rstan`, `tidybayes`, and `ggplot2`. *This is work in progress.*
+[Vincent](http://arelbundock.com) is trying to replicate (nearly) all the models in Richard McElreath's [*Statistical Rethinking (2nd ed.)*](https://xcelab.net/rm/statistical-rethinking/) book using `Stan`, `R`, `rstan`, `tidybayes`, and `ggplot2`. *This is work in progress.*
 
 Rendered `Rmarkdown` notebooks can be viewed here:
 
@@ -15,6 +15,7 @@ Rendered `Rmarkdown` notebooks can be viewed here:
 * [Chapter 13](https://vincentarelbundock.github.io/rethinking2/13.html)
 * [Chapter 14](https://vincentarelbundock.github.io/rethinking2/14.html)
 * [Chapter 15](https://vincentarelbundock.github.io/rethinking2/15.html)
+* [Chapter 16](https://vincentarelbundock.github.io/rethinking2/16.html)
 
 All data and code can be downloaded from Github: [https://github.com/vincentarelbundock/rethinking2](https://github.com/vincentarelbundock/rethinking2)
 

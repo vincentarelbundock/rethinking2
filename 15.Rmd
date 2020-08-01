@@ -1,5 +1,5 @@
 ---
-title: "Statistical Rethinking 2: Chapter 16"
+title: "Statistical Rethinking 2: Chapter 15"
 author: Vincent Arel-Bundock
 output: html_document
 ---

@@ -18,7 +18,7 @@ Estimated and checked against the book:
 * m13.7nc
 * m13.4nc
 
-# Librairies
+# Libraries
 
 ```{r, include=FALSE}
 # set default graphics theme if Vincent's personal package is installed
