@@ -10,12 +10,18 @@ Estimated and checked against book:
 
 * m16.1
 
-TODO:
+Stan code printed in the book or in the `rethinking` package:
 
 * m16.2
-* m16.3
-* m16.4
 * m16.5
+
+TODO:
+
+* m16.4
+
+This model is not discussed in my copy of the book:
+
+* m16.3
 
 # Libraries
 

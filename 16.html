@@ -387,12 +387,18 @@ summary {
 <ul>
 <li>m16.1</li>
 </ul>
-<p>TODO:</p>
+<p>Stan code printed in the book or in the <code>rethinking</code> package:</p>
 <ul>
 <li>m16.2</li>
-<li>m16.3</li>
-<li>m16.4</li>
 <li>m16.5</li>
+</ul>
+<p>TODO:</p>
+<ul>
+<li>m16.4</li>
+</ul>
+<p>This model is not discussed in my copy of the book:</p>
+<ul>
+<li>m16.3</li>
 </ul>
 </div>
 <div id="libraries" class="section level1">
@@ -440,12 +446,12 @@ m16.1 &lt;- stan(model_code = stan_program, data = stan_data)</code></pre>
 ## post-warmup draws per chain=1000, total post-warmup draws=4000.
 ## 
 ##         mean se_mean   sd   2.5%    25%    50%    75%  97.5% n_eff Rhat
-## p       0.25    0.00 0.06   0.15   0.21   0.24   0.28   0.39   905    1
-## k       5.67    0.08 2.76   2.00   3.74   5.14   6.99  12.52  1102    1
-## sigma   0.21    0.00 0.01   0.20   0.20   0.21   0.21   0.22  1500    1
-## lp__  576.76    0.04 1.31 573.24 576.24 577.10 577.68 578.18   979    1
+## p       0.25    0.00 0.06   0.16   0.21   0.24   0.28   0.38   742 1.01
+## k       5.68    0.10 2.74   2.04   3.74   5.12   7.07  12.40   794 1.01
+## sigma   0.21    0.00 0.01   0.19   0.20   0.21   0.21   0.22  1147 1.01
+## lp__  576.79    0.04 1.21 573.75 576.23 577.08 577.68 578.19  1063 1.00
 ## 
-## Samples were drawn using NUTS(diag_e) at Sat Aug  1 16:29:25 2020.
+## Samples were drawn using NUTS(diag_e) at Sat Aug  1 18:41:00 2020.
 ## For each parameter, n_eff is a crude measure of effective sample size,
 ## and Rhat is the potential scale reduction factor on split chains (at 
 ## convergence, Rhat=1).</code></pre>
