@@ -386,15 +386,12 @@ summary {
 <p>Estimated and checked against book:</p>
 <ul>
 <li>m16.1</li>
+<li>m16.4</li>
 </ul>
 <p>Stan code printed in the book or in the <code>rethinking</code> package:</p>
 <ul>
 <li>m16.2</li>
 <li>m16.5</li>
-</ul>
-<p>TODO:</p>
-<ul>
-<li>m16.4</li>
 </ul>
 <p>This model is not discussed in my copy of the book:</p>
 <ul>
@@ -446,12 +443,58 @@ m16.1 &lt;- stan(model_code = stan_program, data = stan_data)</code></pre>
 ## post-warmup draws per chain=1000, total post-warmup draws=4000.
 ## 
 ##         mean se_mean   sd   2.5%    25%    50%    75%  97.5% n_eff Rhat
-## p       0.25    0.00 0.06   0.16   0.21   0.24   0.28   0.38   742 1.01
-## k       5.68    0.10 2.74   2.04   3.74   5.12   7.07  12.40   794 1.01
-## sigma   0.21    0.00 0.01   0.19   0.20   0.21   0.21   0.22  1147 1.01
-## lp__  576.79    0.04 1.21 573.75 576.23 577.08 577.68 578.19  1063 1.00
+## p       0.25    0.00 0.06   0.16   0.21   0.24   0.27   0.38   895    1
+## k       5.82    0.08 2.68   2.10   3.99   5.24   7.10  12.49  1015    1
+## sigma   0.21    0.00 0.01   0.19   0.20   0.21   0.21   0.22  1435    1
+## lp__  576.80    0.04 1.22 573.61 576.25 577.10 577.69 578.20  1151    1
 ## 
-## Samples were drawn using NUTS(diag_e) at Sat Aug  1 18:41:00 2020.
+## Samples were drawn using NUTS(diag_e) at Sun Aug  2 09:50:54 2020.
+## For each parameter, n_eff is a crude measure of effective sample size,
+## and Rhat is the potential scale reduction factor on split chains (at 
+## convergence, Rhat=1).</code></pre>
+</div>
+<div id="section-16.3-ordinary-differential-nut-cracking" class="section level1">
+<h1>Section 16.3: Ordinary differential nut cracking</h1>
+<pre class="r"><code>stan_data &lt;- read.csv(&#39;data/Panda_nuts.csv&#39;, sep = &#39;;&#39;) %&gt;%
+             mutate(age = age / max(age)) %&gt;%
+             compose_data
+
+stan_program &lt;- &quot;
+data {
+    int n;
+    int nuts_opened[n];
+    vector[n] age; 
+    vector[n] seconds; 
+}
+parameters {
+    real phi;
+    real k;
+    real theta;
+}
+model {
+    vector[n] lambda;
+    for (i in 1:n) {
+        lambda[i] = seconds[i] * phi * (1 - exp(-k * age[i]))^theta;
+    }
+    nuts_opened ~ poisson(lambda);
+    phi ~ lognormal(log(1), .1);
+    k ~ lognormal(log(2), .25);
+    theta ~ lognormal(log(5), .25);
+}
+&quot;
+m16.4 &lt;- stan(model_code = stan_program, data = stan_data)</code></pre>
+<pre class="r"><code>m16.4</code></pre>
+<pre><code>## Inference for Stan model: b0c1380fa4a6cfc0903d33822ca7fce6.
+## 4 chains, each with iter=2000; warmup=1000; thin=1; 
+## post-warmup draws per chain=1000, total post-warmup draws=4000.
+## 
+##          mean se_mean   sd    2.5%     25%     50%     75%   97.5% n_eff Rhat
+## phi      0.87    0.00 0.04    0.79    0.84    0.87    0.89    0.95  1456 1.00
+## k        5.95    0.02 0.55    4.86    5.58    5.95    6.34    7.02  1001 1.01
+## theta    9.78    0.06 1.98    6.41    8.37    9.59   11.04   14.12   966 1.01
+## lp__  1993.91    0.03 1.18 1990.82 1993.36 1994.21 1994.78 1995.29  1209 1.01
+## 
+## Samples were drawn using NUTS(diag_e) at Sun Aug  2 09:51:15 2020.
 ## For each parameter, n_eff is a crude measure of effective sample size,
 ## and Rhat is the potential scale reduction factor on split chains (at 
 ## convergence, Rhat=1).</code></pre>

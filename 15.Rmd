@@ -12,10 +12,10 @@ Estimated and checked against book:
 * m15.2
 * m15.3
 * m15.4
+* m15.5
 
 TODO:
 
-* m15.5
 * m15.6
 * m15.7
 * m15.8
@@ -233,4 +233,60 @@ m15.4 <- stan(model_code = stan_program, data = stan_data)
 
 ```{r}
 m15.4
+```
+
+Stan cannot handle `NA`s. Instead, we replace `NA`s by `Inf`, and we check for positive infinity in a loop to construct a `B_merge` vector. I'm sure there is a more computationally efficient (but convoluted?) way to achieve the same goal, but this hack is transparent and easy to understand.
+
+```{r, warning=FALSE, message=FALSE, results=FALSE}
+stan_data <- read.csv('data/milk.csv', sep = ';') %>%
+             mutate(neocortex.prop = neocortex.perc / 100,
+                    logmass = log(mass),
+                    K = standardize(kcal.per.g),
+                    M = standardize(logmass),
+                    B = standardize(neocortex.prop),
+                    B = ifelse(is.na(B), Inf, B)) %>%
+             compose_data
+
+stan_program <- "
+data {
+    int n;
+    vector[n] K;
+    vector[n] M;
+    vector[n] B;
+}
+parameters {
+    real nu;
+    real a;
+    real bB;
+    real bM;
+    real<lower=0> sigma_B;
+    real<lower=0> sigma;
+    vector[n] B_miss;
+}
+transformed parameters {
+    vector[n] B_merge;
+    for (i in 1:n) {
+        if (B[i] == positive_infinity()) {
+            B_merge[i] = B_miss[i];
+        } else {
+            B_merge[i] = B[i];
+        }
+    }
+}
+model {
+    vector[n] mu;
+    [sigma, sigma_B] ~ exponential(1);
+    [a, nu, bB, bM] ~ normal(0, 0.5);
+    B_merge ~ normal(nu, sigma_B);
+    for (i in 1:n) {
+        mu[i] = a + bB * B_merge[i] + bM * M[i];
+    }
+    K ~ normal(mu, sigma);
+}
+"
+m15.5 <- stan(model_code = stan_program, data = stan_data,
+            iter = 5000)
+
+```{r}
+summary(m15.5, c('nu', 'a', 'bM', 'bB', 'sigma_B', 'sigma'))$summary
 ```

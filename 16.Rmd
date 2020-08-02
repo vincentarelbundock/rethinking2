@@ -9,15 +9,12 @@ output: html_document
 Estimated and checked against book:
 
 * m16.1
+* m16.4
 
 Stan code printed in the book or in the `rethinking` package:
 
 * m16.2
 * m16.5
-
-TODO:
-
-* m16.4
 
 This model is not discussed in my copy of the book:
 
@@ -76,4 +73,42 @@ m16.1 <- stan(model_code = stan_program, data = stan_data)
 
 ```{r}
 m16.1
+```
+
+# Section 16.3: Ordinary differential nut cracking
+
+```{r, warning=FALSE, message=FALSE, results=FALSE}
+
+stan_data <- read.csv('data/Panda_nuts.csv', sep = ';') %>%
+             mutate(age = age / max(age)) %>%
+             compose_data
+
+stan_program <- "
+data {
+    int n;
+    int nuts_opened[n];
+    vector[n] age; 
+    vector[n] seconds; 
+}
+parameters {
+    real phi;
+    real k;
+    real theta;
+}
+model {
+    vector[n] lambda;
+    for (i in 1:n) {
+        lambda[i] = seconds[i] * phi * (1 - exp(-k * age[i]))^theta;
+    }
+    nuts_opened ~ poisson(lambda);
+    phi ~ lognormal(log(1), .1);
+    k ~ lognormal(log(2), .25);
+    theta ~ lognormal(log(5), .25);
+}
+"
+m16.4 <- stan(model_code = stan_program, data = stan_data)
+```
+
+```{r}
+m16.4
 ```
