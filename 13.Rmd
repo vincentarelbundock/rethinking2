@@ -193,9 +193,6 @@ m13.3 <- stan(model_code = stan_program, data = stan_data)
 summary(m13.3, c('a_bar', 'sigma'))$summary
 ```
 
-
-```
-
 # Section 13.3: More than one type of cluster
 
 ```{r, results=FALSE, message=FALSE, warning=FALSE}
